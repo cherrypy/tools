@@ -1,0 +1,301 @@
+= CherryPy Tutorial =
+
+Traducción oficial: [wiki:CherryPyTutorial en Ingles]
+Traducciones (Viejas): [wiki:CherryPyTutorialIta Italiano], [wiki:CherryPyTutorialFrench Frances]
+
+== Que es CherryPy? ==
+
+CherryPy es un entorno de desarrollo HTTP orientado a objetos estilo Python. Provee la fundación en la cual se pueden escribir aplicaciones web complejas, con poco o sin ningún conocimiento de los protocolos internos. CherryPy permite que los desarrolladores construyan aplicaciones web en la misma manera que construirían cualquier otro programa orientado a objetos en Python. Esto usualmente resulta en menos código fuente desarrollado en menos tiempo.
+
+CherryPy intenta no meterse entre el programador y el problema. Las aplicaciones CherryPy son usualmente muy simples. Funciona sin hacer cambios, el comportamiento predeterminado es lo suficientemente sensible para que se use sin mucha configuración o personalización. El servidor web incluido permite que uno tenga aplicaciones web en cualquier parte donde esté instalado Python. En pocas palabras, CherryPy es lo más similar a Python posible.
+
+== Que NO es CherryPy? ==
+
+Como entorno HTTP, CherryPy hace todo lo necesario para permitir que código Python se ejecute cuando algún recurso (o URL) sea pedido por el usuario. Pero no es un lenguaje de plantillas, como PHP. CherryPy puede trabajar con muchos paquetes de plantillas, incluyendo [http://www.cheetahtemplate.org/ Cheetah], [http://cherrytemplate.python-hosting.com/ CherryTemplate], y [wiki:sp/LenguajesDePlantillas muchos otros]. Pero aunque sean útiles de cierta manera, paquetes de plantillas no son estrictamente necesarios y se puede usar puro código Python para generar las páginas web.
+
+CherryPy incluye un ligero servidor web embedido, capaz de soportar cargas notables. Se estima que CherryPy puede soportar alrededor de 530 solicitudes por segundo con una configuracion razonable (según Enero, 2007). Pero CherryPy no es Apache. Si por alguna razón necesita un servidor de clase empresarial, se puede correr [wiki:sp/BajoApache CherryPy y Apache] juntos.
+
+== De que se trata este tutorial? ==
+
+Este tutorial cubre los pasos básicos para que alguien nuevo aprenda la manera única de desarrollo de aplicaciones web de CherryPy. Al terminar  este tutorial, el programador podrá entender cómo funcionan las aplicaciones CherryPy y también podrá implementar, por su propia cuenta, aplicaciones simples pero poderosas. Es necesario cierto conocimiento del lenguaje de programación Python, no se tiene que ser un experto para trabajar con CherryPy, pero se recomienda entender bien las básicas de la programación orientada a objetos.
+
+=== Conocimiento requerido ===
+
+Se asume que el usuario tiene:
+
+ * Cierto conocimiento del lenguaje programación Python.
+ * Cierta experiencia con programación orientada a objetos básica.
+ * Cierto conocimiento de HTML, el cual es necesario para construir páginas Web.
+
+=== Aprender Python ===
+
+Como se ha dicho, esta no es una guía al lenguaje Python. Hay muchos buenos recursos para aquellos aprendiendo Python, para mencionar algunos de los mejores (en ingles):
+ [http://www.pasteur.fr/recherche/unites/sis/formation/python/ Python curso en Bioinformatica], [http://www.byteofpython.info/ A Byte Of Python] y [http://www.diveintopython.org/ Dive into Python]). La [http://www.python.org Pagina oficial de Python] tiene algunos buenos recursos, incluyendo [http://docs.python.org/tut/tut.html un tutorial excelente].
+
+== Tu primera aplicación CherryPy ==
+
+La aplicación clásica “Hola Mundo” toma menos de 10 líneas de código escrita usando CherryPy.
+
+{{{
+#!python
+import cherrypy
+
+class HolaMundo:
+    def index(self):
+        return "Hola Mundo!"
+    index.exposed = True
+
+cherrypy.quickstart(HolaMundo())
+}}}
+
+Primero tienes que [wiki:sp/InstalacionDeCherryPy instalar CherryPy]. Copia el texto y guardalo como {{{holamundo.py}}}, luego inicia la aplicación en la línea de comandos:
+
+{{{
+python holamundo.py
+}}}
+
+Ahora en tu navegador escribe la dirección {{{http://localhost:8080}}} y veras una página que dice {{{Hola Mundo!}}} 
+
+=== Como funciona? ===
+
+Analicemos el archivo {{{hola.py}}}:
+
+* La sentencia {{{import cherrypy}}} importa el modulo principal de CherryPy. Esto es lo único que se requiere para que funcione CherryPy. Se puede importar CherryPy en una sesión interactiva de Python para ver lo que hay disponible.
+* Declaramos una clase llamada {{{HolaMundo}}}. Una instancia de esta clase será el objeto que será “publicado” por CherryPy. Esta clase contiene un solo método, llamado {{{index}}}, el cual será llamado la dirección raíz del sitio sea pedida (Por ejemplo: {{{http://localhost/}}}). Este método devuelve el “contenido” de la pagina Web; en este caso la cadena de texto {{{“Hello World!”}}}.
+* La línea {{{index.exposed = True}}} es un paso necesario para decirle a CherryPy que la función {{{index()}}} será “expuesto”. Solo los métodos expuestos pueden ser llamados para responder una petición. Esta característica permite al programador seleccionar que métodos de un objeto serán accesibles via Web; los métodos no expuestos no pueden ser accedidos.
+* {{{cherrypy.quickstart(HolaMundo()}}}] es la sentencia que “publica” una instancia de la clase HolaMundo e inicia el servidor incluido. Este se ejecutara hasta ser explícitamente interrumpido, con {{{Control+C}}} o con una señal adecuada (un simple {{{kill}}} en Unix es suficiente).
+
+Cuando la aplicación se ejecuta, el servidor CherryPy se inicia con la configuración predeterminada. Oira en {{{localhost}}} en el puerto {{{8080}}}. Estos predeterminados pueden ser sobreescritos usando un archivo de configuración.
+
+Finalmente, el servidor web recibe la petición por la URL {{{http://localhost:8080}}}. Entonces busca por el mejor método para manejar la petición, iniciando con la instancia de {{{HolaMundo}}}. En este caso particular, la raíz del sitio es automáticamente dirigida al método {{{index()}}} (similar a la pagina clásica predeterminada de muchos servidores web convencionales: {{{index.html}}} ) La clase HolaMundo define un método {{{index()}}} y lo expone. CherryPy llama a {{{HolaMundo.index()}}} y el resultado de la llamada se envía al navegador como el contenido de la pagina índice para el sitio web. Todo el trabajo se hace automáticamente; el programador de la aplicación solo necesita proveer el contenido necesario como el valor de retorno del método {{{index()}}}
+
+== Conceptos ==
+
+==== Publicar objetos ====
+
+Cualquier objeto que esté vinculado al objeto raíz esta “publicado”. Esto significa que el objeto esta accesible mediante una rutina URL-a-objeto interna. Pero esto no significa que el objeto en si es directamente accesible vía Web. Para que esto pase, el objeto tiene que ser “expuesto”.
+
+==== Exponer objetos ====
+
+Cherrypy dirije solicitudes URL a objetos y llama el método conveniente automáticamente. Los métodos que pueden ser llamadas como resultado de una solicitud externa se dice que están “expuestos”.
+
+Los objetos se “exponen” en CherryPy asignándoles el atributo {{{exposed}}}. Esto se puede hacer directamente en el objeto en si: {{{<objeto>.exposed = True}}}. Los métodos también pueden ser expuestos usando un decorador especial:
+
+{{{
+#!python
+    @cherrypy.expose
+    def index(self):
+        ...
+}}}
+
+==== Por que la distinción? ====
+
+L a distinción entre objetos “publicados” y “expuestos” puede parecer tonta o innecesaria al principio. Por definición, todos los objetos expuestos también están publicados, asi que por que tenemos que preocuparnos por los objetos no expuestos?
+
+La respuesta es que, aunque solo los objetos expuestos pueden ser accedidos como resultado de una consulta externa, hay algunas situaciones donde las solicitudes pueden ser redirigidas a cualquier objeto publicado, incluyendo los que no están expuestos. Esta es una característica avanzada que se usara mas tarde. Por ahora, solo se necesita entender los conceptos básicos.
+
+== Localizando el objetos correcto ==
+
+Para el usuario, una aplicación web es idéntica a un sitio web con archivos estáticos. El usuario escribe (o le da clic a) una URL y obtiene la pagina web apropiada. Un servidor web convencional usa la URL para obtener un archivo estático del sistema de archivo. Por otra parte, una aplicación web no solo sirve contenido estático de archivos; también puede dirigir la URL que reciba a un objeto y llamarlo. El resultado entonces se envía al navegador del usuario, donde se presenta como una página web visible. El resultado es una página web dinámica; por cada URL, un objeto único será ejecutado. 
+
+La clave para entender cómo escribir una nueva aplicación web es entender como esta funcionalidad ocurre. CherryPy usa un procedimiento bastante directo para localizar objetos. La raíz del sitio es el objeto {{{Application.root}}}. Cuando se reciba una URL, se divide en componentes de ruta y se procede a buscar en el sitio hasta que se encuentre un objeto que concuerde mejor con la URL en particular. Por cada componente de ruta, se intenta buscar un objeto con el mismo nombre, empezando desde la raíz, y  bajando por cada componente que encuentre hasta que no pueda encontrar ninguna coincidencia. Por ejemplo:
+
+{{{
+#!python
+root = HolaMundo()
+root.onapagina = UnaPagina()
+root.otrapagina =OtraPagina()
+}}}
+
+En este ejemplo, la URL {{{http://localhost/unapagina}}} apuntara al primer objeto y la URL {{{http://localhost/otrapagina}}} apunta al segundo. Esta búsqueda es automática. Pero se puede ir más a fondo:
+
+{{{
+#!python
+root.alguna = Pagina()
+root.alguna.pagina = Pagina()
+}}}
+
+En este ejemplo, la URL {{{http://localhost/alguna/pagina}}} será dirigida al objeto {{{root.some.page}}}. Si este objeto está expuesto (o alternativamente, su método {{{index}}} lo está), será llamado para responder a esa URL.
+
+En nuestro ejemplo HolaMundo, si agregamos el {{{http://…/unapagina}}} a {{{UnaPagina()}}} la localización será asi:
+
+{{{
+#!python
+class OnaPagina(object):
+    def index(self):
+        return "una página!"
+    index.exposed = True
+ 
+class HolaMundo(object):
+    unapagina = UnaPagina()
+ 
+    def index(self):
+        return "Hola Mundo!"
+    index.exposed = True
+ 
+cherrypy.quickstart(HolaMundo())
+}}}
+
+== El método indice ==
+
+El método índice ({{{index()}}} tiene un rol especial en CherryPy. Como el archivo {{{index.html}}}, es la página predeterminada para cualquier nodo interno del árbol de objetos. El método {{{index()}}} puede tener argumentos adicionales que serán automáticamente asignados en la forma de variables como se mandan en su método GET o POST.
+
+El método {{{index()}}} solo se llama para una coincidencia total de la URL. Si la URL tiene una coincidencia parcial (en otras palabras, si CherryPy no pudo encontrar una coincidencia para algún componente en la ruta), no será llamado.
+
+== Llamando otros métodos ==
+
+CherryPy también puede llamar directamente métodos en los objetos publicados, si recibe una URL que esta directamente asignada a ellos. Por ejemplo:
+
+{{{
+#!python
+def hola():
+    return 'Hola!'
+hola.exposed = True
+
+root.hola = hola
+}}}
+
+En este ejemplo, {{{root.hola}}} contiene una función, llamada {{{hola}}}. Cuando CherryPy recibe una solicitud para la URL {{{/foo}}}, llamara automáticamente la función {{{foo()}}}. Puede ser una función normal o un método de cualquier objeto; hasta cualquier objeto ejecutable.
+
+En algunos casos avanzados, puede haber conflicto cuando CherryPy trate de decidir que método llamar para responder una solicitud. El método {{{index()}}} tiene precedencia. Pero si CherryPy encuentra una coincidencia total y el ultimo objeto de la coincidencia es ejecutable (es un método, función o cualquier otro objeto de Python que tenga el método {{{__call___}}};  y si el objeto ejecutable no contiene un método {{{index()}}} valido, entonces el objeto en sí, será llamado. Estas reglas son necesarias porque clases en Python son ejecutables; ejecutándolas produce una nueva instancia. Esto puede ser confuso, pero las reglas son muy simples en la práctica.
+
+== Recibir datos de formas HTML ==
+
+Cualquier método que es llamado por CherryPy – {{{index()}}} o cualquier otro método apropiado – puede recibir datos adicionales de formas HTML usando argumentos por clave. Por ejemplo, la siguiente forma de inicio de sesión envía el {{{usuario}}} y la {{{clave}}} como argumentos de la forma usando el método POST.
+
+{{{
+#!text/html
+<form action="iniciarSesion" method="post">
+    <p>Usuario</p>
+    <input type="text" name="usuario" value="" 
+        size="15" maxlength="40"/>
+    <p>Clave</p>
+    <input type="password" name="clave" value="" 
+        size="10" maxlength="40"/>
+    <p><input type="submit" value="Iniciar Sesion"/></p>
+    <p><input type="reset" value="Limpiar"/></p>
+</form>
+}}}
+
+El siguiente código se puede usar para manejar esta URL:
+
+{{{
+#!python
+class Root:
+    def iniciarSesion(self, usuario=None, clave=None):
+        # checar usuario y clave
+        ...
+    iniciarSesion.exposed = True
+}}}
+
+Ambos argumentos tienen que ser declarados como argumentos por clave. El valor predeterminado puede ser usado para proveer un valor predeterminado  adecuado para los argumentos opcionales o para proveer a la aplicación maneras para detectas si algunos valores faltan en la solicitud.
+
+CherryPy soporta ambos el método  GET y POST para formas. Los argumentos se pasan de la misma manera, sin importar el método original usado por el navegador para enviar los datos al servidor web.
+
+== Coincidencias parciales y el método predeterminado {{{default}}} ==
+
+Coincidencias parciales pueden ocurrir cuando una URL contiene componentes que no concuerdan con el árbol de objetos. Esto puede pasar por varias razones. Por ejemplo, puede ser un error, el usuario tecleo una URL incorrecta. Pero también puede significar que la URL contiene argumentos extra.
+Cuando una coincidencia parcial ocurre, CherryPy llama a un método predeterminado, {{{default}}}. El método {{{default}}} es similar al método {{{index}}}; aunque solo se llama como un último recurso y se recomienda para dos aplicaciones:
+
+* Manejo de errores, para que se llame cuando el usuario teclea una URL incorrecta.
+* Para usar argumentos de posición (desde CherryPy 2.2, los argumentos de posición  se pueden usar con cualquier método menos con el {{{index}}})
+
+Por ejemplo, si se tiene una aplicación tipo blog escrita para CherryPy que reciba el año, mes y día como parte de la URL {{{http://localhost/blog/2007/06/29}}}.El siguiente código puede manejar esta URL: 
+{{{
+#!python
+class Blog:
+    def default(self, ano, mes, dia):
+        ...
+    default.exposed = True
+...
+root.blog = Blog()
+}}}
+
+La URL anterior será asignada a una llamada a:
+
+{{{
+#!python
+root.blog.default('2007', '6', '29')
+}}}
+
+En este caso, hay una coincidencia parcial hasta el componente {{{blog}}}. El resto de la URL no existe en el árbol de objetos publicados. En este caso, el método {{{default()}}} será llamado y los parámetros de posición recibirán  los componentes de la ruta restantes como argumentos. Los valores serán pasados como cadenas de texto; en el ejemplo anterior, los argumentos tienen que ser convertidos a números pero la idea básica esta correcta.
+
+== El archivo de configuración de CherryPy ==
+
+CherryPy usa un [wiki:sp/ArchivoDeConfiguracion Archivo de configuración] simple para personalizar algunos aspectos de su comportamiento. El archivo de configuración puede ser editado con cualquier editor de textos convencional (Incluso con el Block de notas) y puede ser usado hasta por usuarios sin conocimientos técnicos para ciertas tareas simples de personalización. Por ejemplo:
+
+{{{
+[global]
+server.socket_port = 8000
+server.thread_pool = 10
+tools.sessions.on = True
+tools.staticdir.root = "/home/sitio"
+
+[/estatico]
+tools.staticdir.on = True
+tools.staticdir.dir = "estatico"
+}}}
+
+Muchos de los valores se explican por si solos (por ejemplo {{{server.socket_port}}} permite cambiar el puerto predeterminado en el cual CherryPy escucha); otros necesitan un mejor conocimiento del funcionamiento interno de CherryPy.
+
+* La opción {{{server.thread_pool}}} determina cuantos hilos de ejecución serán iniciados para responder solicitudes.
+* La opción {{{tolos.sessions.on}}} habilita la funcionalidad de sesiones. Las sesiones son necesarias para implementar aplicaciones web complejas, como identificación de usuarios, por ejemplo.
+* El grupo {{{[/estatico]}}} especifica que el el contenido estado de /home/sitio/estatico/* será servido con la URL /estatico/*
+* La opción {{{tools.staticdir.root}}} especifica el directorio en el cual empezar a servir archivos estáticos (Ver [wiki:sp/ContenidoEstatico Contenido estático])
+
+== La estructura de CherryPy ==
+
+Muchas de las características de CherryPy están disponibles a través del modulo {{{cherrypy}}}. Este contiene bastantes miembros:
+
+* {{{cherrypy.engine}}} contiene el API para controlar la máquina de CherryPy.
+* {{{cherrypy.server}}} contiene el API para controlar el servidor HTTP.
+* [wiki:sp/ObjetoSolicitud cherrypy.request] contiene toda la información que viene con la solicitud HTTP después de ser procesada y analizada por CherryPy.
+* {{{cherrypy.request.headers}}} contiene las opciones de las cabeceras HTTP que fueron enviadas como parte de la solicitud.
+* {{{cherrypy.session}}} es un variable especial que CherryPy genera automáticamente y la codifica; se puede usar para almacenar datos de sesión en cookies persistentes. Para que funcione hay que habilitar la configuración ‘tools.session.on’ asignándole True.
+* [wiki:sp/ObjetoRespuesta cherrypy.response] contiene la información que se usara para construir la respuesta HTTP.
+* {{{cherrypy.response.headers}}} contiene  las opciones de las cabeceras HTTP tal como serán enviadas  por el servidor, antes de que se envié el contenido.
+* {{{cherrypy.response.body}}} contiene el contenido de la respuesta de la pagina web que se enviara.
+
+== Herramientas ==
+
+El núcleo de CherryPy es extremadamente ligero y limpio. Contiene solo las características necesarias para soportar el protocolo HTTP y para llamar los objetos correctos para cada solicitud. Características adicionales pueden ser agregadas usando “herramientas modulares”.
+
+Una herramienta es un objeto que tiene la oportunidad de trabajar con una solicitud mientras pasa por la cada habitual de procesamiento de CherryPy. La librería de CherryPy incluye bastantes herramientas, disponibles en {{{cherrypy.tools}}}. Algunos ejemplos son:
+
+* tools.decode: Maneja automáticamente datos Unicode en la solicitud, convirtiendo las cadenas de texto que el navegador envía en cadenas de texto nativas de Python.
+* tools.encode: Convierte automáticamente la respuesta de cadena de texto nativa de Unicode a algún formato adecuado para ser codificado (Latin-1 o UTF-8, por ejemplo)
+* tools.gzip: Comprime el contenido al instante, usando el formato {{{gzip}}. Ahorra ancho de banda.
+* tools.xmlrpc: Implementa una adaptación especial de la capa XML-RPC sobre el CherryPy estándar. Se ocupa de la traducción de los datos en la solicitud y en la respuesta.
+
+Las herramientas proveen mucha flexibilidad. Se pueden aplicar diferentes herramientas a diferentes partes del sitio, y se puede cambiar el orden de las herramientas. El usuario puede escribir herramientas personalizadas para aplicaciones especiales,  cambiando el comportamiento de CherryPy sin necesidad de cambiar su funcionalidad interna.
+
+Las herramientas para cualquier parte del sitio se pueden habilitar en el archivo de configuración.
+
+{{{
+[/]
+tools.encode.on = True
+tools.gzip.on = True
+}}}
+
+En este caso, la aplicación usara cadenas de texto Unicode para el contenido que genere, la traducción a {{{UTF-8}}} es automática mediante la herramienta de codificación. El contenido también será comprimido con gzip para ahorrar ancho de banda.
+
+= Conclusion =
+
+Este tutorial solo cubre las características básicas de CherryPy, pero las presenta de una manera para que sea fácil para el usuario el descubrir cómo usarlas. La distribución de CherryPy viene con bastantes buenos tutoriales, pero la mejor manera de aprender a usar CherryPy es usándolo para escribir tus propias aplicaciones Web. Es fácil para cualquier persona gracias al servidor web incluido, se pueden hacer aplicaciones locales o incluso pequeños sitios web. Inténtalo y haznos saber lo que hiciste con CherryPy!
+
+{{{
+#!html
+<h2 class='compatibility'>Versiones viejas</h2>
+}}}
+
+||   || reemplaza esto  || con esto ||
+||2.2||cherrypy.quickstart(HolaMundo())||cherrypy.root = HolaMundo()[[br]]cherrypy.server.start()||
+||   ||tools.sessions ||session_filter||
+||   ||tools.staticdir||static_filter ||
+||2.1||simple_cookie  ||simpleCookie  ||
+||   ||socket_port    ||socketPort    ||
+||   ||thread_pool    ||threadPool    ||
+||   ||session_filter ||sessionFilter ||
+||   ||static_filter  ||staticFilter  ||
+||   ||headers        ||headerMap     ||
+||2.0||import cherrypy||from cherrypy import cpg as cherrypy||

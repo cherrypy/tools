@@ -1,0 +1,39 @@
+= Positional Parameter demonstration =
+
+Any exposed method defined in your application can make use of positional parameters, although it's extremely hard to explain in text exactly how they work.  The easiest way to get a grip on how CherryPy deals with URL to parameter mapping is to create a very simple method, fire up your application, and try some URL's.
+
+An example of this testing method could be as follows:
+
+{{{
+import cherrypy
+
+class Root:
+    def mytest(self, param_1=None, param_2=None, *args, **kw):
+        return repr(dict(param_1=param_1,
+                         param_2=param_2,
+                         args=args,
+                         kw=kw))
+    mytest.exposed = True
+
+cherrypy.quickstart(Root(), '/', config={'server.socket_port': 8080})
+}}}
+
+Now, start your application.  You can send some of the following URL's, and any others you can come up with, to see how the method behaves:
+
+http://localhost:8080/mytest/foo/bar?baz=testing
+
+http://localhost:8080/mytest/foo/bar/baz
+
+http://localhost:8080/mytest/foo/bar?param_1=baz
+
+You'll notice that the last URL will cause a 500 error.  This is because the first part of the URL after /mytest (i.e. 'foo') is given as the value for param_1 and you are also passing param_1=baz using the URL parameter.  Effectively you are defining param_1 twice which is just not very useful.
+
+The conclusion to the above example is simply this:  Take care when naming your method's parameters so they will not overlap with explicit keyword parameters.
+
+----
+
+
+With this default dispatcher you are not able to serve a representation which contains the keyword 'self'. ?self= will end up in internal server error and also POST data are not possible to have a key 'self'.
+I am against using this default thingy. it creates more problems than it solves. Also it is not very RESTful.
+
+--spaceone

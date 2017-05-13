@@ -1,0 +1,144 @@
+This is a cherrypy3 Tool for sqlalchemy plus some additional functionality that extends sqlalchemy's declarative base with similar options provided by elixir. This has been successfully tested with python3 (at one point in its revision)
+
+Extended functionality depends on being able to access the toolbox this Tool is mounted in. Refer to code.
+
+Check docstring of BaseExtensions for use of extended functionality. When declaring models, you will want to create a base like so
+
+{{{
+from toolbox import dae #or where-ever you mounted this tool
+
+Base = dae.sqla.get_base('sqlite:////home/daniel/www.sqlite')
+metadata = Base.metadata
+...
+}}}
+
+This tool can be used across multiple apps for multiple engines. Simply import the model and when you access Model.query, the appropriate session will handle the request.
+
+This tool has only been tested with sqlite.
+
+Before starting engine, call dae.sqla.create_all()
+
+The code is as follows:
+{{{
+# -*- coding: utf-8 -*-
+import cherrypy
+import sqlalchemy
+from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
+from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.ext.declarative import DeclarativeMeta, declarative_base
+
+import toolbox
+
+def to_dict(self):
+    r = {}
+    for k, v in self.__dict__.items():
+        if k[0] == '_':
+            continue
+        if isinstance(v, list):
+            continue
+        r[k] = v
+    return r
+
+def from_dict(self, kwargs):
+    r = {}
+    for k, v in kwargs.items():
+        if hasattr(self, k) and getattr(self, k) != v:
+            setattr(self, k, v)
+            r[k] = v
+    dburi = repr(self.__class__.__base__.metadata.bind)[7:-1] # get contents of string 'Engine(...)'
+    session = toolbox.dae.sqla.get_session(dburi)
+    session.add(self)
+    return r
+
+def _base_constructor(self, **kwargs):
+    for k, v in kwargs.items():
+        if hasattr(self, k):
+            setattr(self, k, v)
+    #TODO find better way to get engine url
+    dburi = repr(self.__class__.__base__.metadata.bind)[7:-1] # get contents of string 'Engine(...)'
+    session = toolbox.dae.sqla.get_session(dburi)
+    session.add(self)
+_base_constructor.__name__ = '__init__'
+
+class BaseExtensions(DeclarativeMeta):
+    '''
+    Extends declarative base to provide convenience methods to models similar to
+    functionality found in Elixir. Works in python3.
+
+    For example, given the model User:
+    # no need to write init methods for models, simply pass keyword arguments or
+    # override if needed.
+    User(name="daniel", email="daniel@dasa.cc") # is automatically added to session
+    User.query # returns session.query(User)
+    User.query.all() # instead of session.query(User).all()
+    User.get_keys() # return list of model attributes
+    User.to_dict() # return a dict of the 1st level of attributes of record
+    changed = User.from_dict({}) # update record based on dict argument passed in and returns any keys changed
+    '''
+    def __init__(self, name, bases, class_dict):
+        DeclarativeMeta.__init__(self, name, bases, class_dict)
+        self.to_dict = to_dict
+        self.from_dict = from_dict
+
+    def get_keys(self):
+        r = []
+        for k, v in self.__dict__.items():
+            if isinstance(v, sqlalchemy.orm.attributes.InstrumentedAttribute):
+                r.append(k)
+        return r
+
+    @property
+    def query(self):
+        dburi = repr(self.__base__.metadata.bind)[7:-1] # get contents of string 'Engine(...)'
+        session = toolbox.dae.sqla.get_session(dburi)
+        return session.query(self)
+
+
+class SQLA(cherrypy.Tool):
+    _name = 'sqla'
+    _bases = {}
+    _sessions = {}
+    
+    def _setup(self):
+        conf = self._merged_args()
+        cherrypy.request.hooks.attach('on_start_resource', self.on_start_resource, **conf)
+        cherrypy.request.hooks.attach('on_end_resource', self.on_end_resource)
+
+    def create_all(self):
+        for v in self._bases.values():
+            v.metadata.create_all()
+            
+    def get_base(self, dburi='sqlite:///www.sqlite'):
+        base = self._bases.get(dburi)
+        if base is None:
+            self._bases[dburi] = base = declarative_base(metaclass=BaseExtensions, constructor=_base_constructor)
+            base.metadata.bind = create_engine(dburi, echo=True)
+        
+        if self._sessions.get(dburi) is None:
+            self._sessions[dburi] = session = scoped_session(sessionmaker(autoflush=True, autocommit=False))
+            session.configure(bind=base.metadata.bind)
+        
+        return base
+
+    def get_session(self, dburi='sqlite:///www.sqlite'):
+        return self._sessions.get(dburi)
+    
+    def on_start_resource(self, echo=None):
+        if echo is not None:
+            for session in self._sessions.values():
+                session.bind.echo = echo
+    
+    def on_end_resource(self):
+        for session in self._sessions.values():
+            try:
+                session.flush()
+                session.commit()
+            except:
+                session.rollback()
+                session.expunge_all()
+            finally:
+                session.remove()
+
+
+}}}

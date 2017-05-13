@@ -1,0 +1,201 @@
+ = CherryPy as a Windows Service =
+
+Here is a short example showing how to configure a basic CherryPy application as a service in Windows.  See the tips and tricks after the code for more information.
+
+{{{
+#!python
+
+"""
+The most basic (working) CherryPy 3.0 Windows service possible.
+Requires Mark Hammond's pywin32 package.
+"""
+
+import cherrypy
+import win32serviceutil
+import win32service
+import win32event
+
+class HelloWorld:
+    """ Sample request handler class. """
+
+    def index(self):
+        return "Hello world!"
+    index.exposed = True
+
+
+class MyService(win32serviceutil.ServiceFramework):
+    """NT Service."""
+    
+    _svc_name_ = "CherryPyService"
+    _svc_display_name_ = "CherryPy Service"
+
+    def __init__(self, args):
+        win32serviceutil.ServiceFramework.__init__(self, args)
+        # create an event that SvcDoRun can wait on and SvcStop
+        # can set.
+        self.stop_event = win32event.CreateEvent(None, 0, 0, None)
+
+    def SvcDoRun(self):
+        cherrypy.tree.mount(HelloWorld(), '/')
+        
+        # in practice, you will want to specify a value for
+        # log.error_file below or in your config file.  If you
+        # use a config file, be sure to use an absolute path to
+        # it, as you can't be assured what path your service
+        # will run in.
+        cherrypy.config.update({
+            'global':{
+                'engine.autoreload.on': False,
+                'log.screen': False,
+                'engine.SIGHUP': None,
+                'engine.SIGTERM': None
+                }
+            })
+        # set blocking=False so that start() does not block
+        cherrypy.server.quickstart()
+        cherrypy.engine.start(blocking=False)
+        # now, block until our event is set...
+        win32event.WaitForSingleObject(self.stop_event, win32event.INFINITE)
+    
+    def SvcStop(self):
+        self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+        cherrypy.server.stop()
+        win32event.SetEvent(self.stop_event)
+
+if __name__ == '__main__':
+    win32serviceutil.HandleCommandLine(MyService)
+}}}
+
+Here is this sample converted for CherryPy 3.1.
+{{{
+#!python
+
+"""
+The most basic (working) CherryPy 3.1 Windows service possible.
+Requires Mark Hammond's pywin32 package.
+"""
+
+import cherrypy
+import win32serviceutil
+import win32service
+
+class HelloWorld:
+    """ Sample request handler class. """
+
+    @cherrypy.expose
+    def index(self):
+        return "Hello world!"
+    
+
+class MyService(win32serviceutil.ServiceFramework):
+    """NT Service."""
+    
+    _svc_name_ = "CherryPyService"
+    _svc_display_name_ = "CherryPy Service"
+
+    def SvcDoRun(self):
+        cherrypy.tree.mount(HelloWorld(), '/')
+        
+        # in practice, you will want to specify a value for
+        # log.error_file below or in your config file.  If you
+        # use a config file, be sure to use an absolute path to
+        # it, as you can't be assured what path your service
+        # will run in.
+        cherrypy.config.update({
+            'global':{
+                'log.screen': False,
+                'engine.autoreload.on': False,
+                'engine.SIGHUP': None,
+                'engine.SIGTERM': None
+                }
+            })
+        
+        cherrypy.engine.start()
+        cherrypy.engine.block()
+        
+    def SvcStop(self):
+        self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+        cherrypy.engine.exit()
+        
+        self.ReportServiceStatus(win32service.SERVICE_STOPPED) 
+        # very important for use with py2exe
+        # otherwise the Service Controller never knows that it is stopped !
+        
+if __name__ == '__main__':
+    win32serviceutil.HandleCommandLine(MyService)
+}}}
+
+
+== Installation ==
+
+Save this source code into a file called {{{MyService.py}}} and then type:
+
+{{{python MyService.py}}}
+
+You will see a list of options for installing, removing, starting, and stopping your service.
+
+To install your new service type:
+
+{{{python MyService.py install}}}
+
+Then type:
+
+{{{python MyService.py start}}}
+
+to start it.  You can also start and stop the service by going to the Start menu, Administrative Tools, Services, and looking for the name of your service.
+
+== Running Your CherryPy Application ==
+
+When you are ready to turn your own CherryPy application into a service, you will probably encounter several things that the simple example above does not.
+
+=== Working Directory ===
+
+When your service starts, the working directory is likely to be somewhere different than when you launch your CherryPy application from the command line.  You will need to use full path's to configuration files, etc.
+
+Another way around this is to add {{{os.chdir('c:\\path\\to\\CherryPy\\application')}}} just before {{{cherrypy.server.start()}}}.  This will change your working directory to the place where your application is installed.
+
+=== No Autoreloader ===
+
+The autoloader doesn't play nice as a service.  It watches for stuff to change, and then tries to restart the application.  Which fails. Make sure you have
+
+{{{
+[global] 
+engine.autoreload.on = False
+}}}
+
+in your server configuration file.
+
+== Debugging a Windows Service ==
+
+It isn't very easy to debug a windows service.  Make sure your application runs from the command line with no problems before spending any time trying to get it to work as a service.  If your application works from the command line, but doesn't work as a service, these tips may help you see what is wrong.
+
+=== Firewalls ===
+
+Beware of the XP Service Pack 2 firewall.  If it is on, it will block programs from listening on ports.  When you run your CherryPy application from the command line, it will pop up a window and ask you if you want to grant access to the program {{{python.exe}}}.  You say yes, thinking this will work for both the command line and the service.  Nope.  The service actually runs the executeable {{{pythonservice.exe}}}.  If the firewall is blocking that program from opening ports, your service will silently fail to start.  This is probably also true for !ZoneAlarm, !BlackIce Defender, and other firewall programs.
+
+=== Look in the Event Viewer ===
+
+Go to the Start Menu, Administrative Tools, Event Viewer, and click on "Applications".  Look for events with a source that is the name of your service.
+
+=== Make sure you have a log file ===
+
+CherryPy will log stuff to disk if you put the following in your app configuration file:
+
+{{{
+log.error_file = 'c:\\path\to\logfile'
+log.screen = False
+}}}
+
+Look in the log file and see if anything looks strange.
+
+=== Log tracebacks ===
+
+Tracebacks may help you see where your application is failing.  Put this in your app config file:
+
+{{{
+tools.log_tracebacks.on = True
+}}}
+
+Restart your service, and look in the log file again.
+
+''Thanks to Robert Brewer for tips on getting this working and Jared for the thorough documentation.''

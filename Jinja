@@ -1,0 +1,123 @@
+Here's a basic CherryPy Tool for using [http://jinja.pocoo.org/ Jinja] templates:
+
+{{{
+#!python
+"""A Jinja Handler and tool.  This code is in the public domain.
+
+Usage:
+@cherrypy.expose
+@cherrypy.tools.jinja(filename='index.html')
+def controller(**kwargs):
+    return {
+
+    } # This dict is the template context     
+
+"""
+import os
+thisdir = os.path.join(os.getcwd(), os.path.dirname(__file__))
+
+import cherrypy
+
+import jinja
+from jinja.datastructure import ComplainingUndefined, SilentUndefinedType
+from jinja.datastructure import make_undefined
+
+
+
+class JinjaHandler(cherrypy.dispatch.LateParamPageHandler):
+    """Callable which sets response.body."""
+
+    def __init__(self, env, template_name, next_handler):
+        self.env = env
+        self.template_name = template_name
+        self.next_handler = next_handler
+
+    def __call__(self):
+        context = {}
+        try:
+            r = self.next_handler()
+            context.update(r)
+        except ValueError, e:
+            cherrypy.log('%s (handler for "%s" returned "%s")\n' % (
+                e, self.template_name, repr(r)), traceback=True)
+
+        # We wait until this point to do any tasks related to template 
+        # loading or context building, as it may not be necessary if
+        # the first handler causes a response and we never render
+        # the template. (Minor Optimization)
+        if cherrypy.config.get('template.show_errors', False):
+            self.env.undefined_singleton = ComplainingUndefined
+        context.update({
+            'request': cherrypy.request,
+            'app_url': cherrypy.request.app.script_name,
+        })
+
+        cherrypy.request.template = tmpl = self.env.get_template(self.template_name)
+        output = tmpl.render(**context)
+
+        return output
+
+class LoggingUndefinedType(SilentUndefinedType):
+    # object calling
+    def __reduce__(self):
+        return 'LoggingUndefined'
+
+    def __unicode__(self):
+        "At this point we're being rendered in a template, so we should log it."
+        cherrypy.log("Coercing undefined object to unicode @%s" %
+                     "".join(traceback.format_stack()),
+                     severity=logging.ERROR)
+        return u""
+
+LoggingUndefined = make_undefined(LoggingUndefinedType)
+
+
+class JinjaLoader(object):
+    """A CherryPy 3 Tool for loading Jinja templates."""
+
+    def __init__(self):
+
+        self.template_dir_list = []
+        self.env = jinja.Environment(loader=jinja.ChoiceLoader(self.template_dir_list),
+                                     default_filters=[],
+                                     undefined_singleton=LoggingUndefined,
+                                     friendly_traceback=False)
+        self.add_template_dir(os.path.join(thisdir, 'templates'))
+
+
+    def __call__(self, filename):
+        cherrypy.request.handler = JinjaHandler(self.env, filename, cherrypy.request.handler)
+
+    def add_template_dir(self, directory):
+        """Used to add a template directory to the jinja source path."""
+        # Note, this is not using memcacheD. It is using an in-process
+        # memory cache. Jinja's terminology is a little confusing.
+        ldr = jinja.FileSystemLoader(searchpath=directory,
+                                     use_memcache=True,
+                                     memcache_size=sys.maxint,
+                                     auto_reload=True)
+        self.template_dir_list.insert(0, ldr)
+        self.env.loader = jinja.ChoiceLoader(self.template_dir_list)
+
+    def add_filter(self, func):
+        """Decorator which adds the given function to jinja's filters."""
+        self.env.filters[func.__name__] = func
+        return func
+
+    def add_global(self, func):
+        """Decorator which adds the given function to jinja's globals."""
+        self.env.globals[func.__name__] = func
+        return func
+
+return func
+
+
+# FIXME: if templates grow more settings, we should consider using a namespace
+cherrypy._cpconfig.environments['production']['template.show_errors'] = False
+cherrypy._cpconfig.environments['staging']['template.show_errors'] = False
+cherrypy._cpconfig.environments['development']['template.show_errors'] = True
+cherrypy._cpconfig.environments['test_suite']['template.show_errors'] = False
+
+loader = JinjaLoader()
+cherrypy.tools.jinja = cherrypy.Tool('before_handler', loader, priority=70)
+}}}

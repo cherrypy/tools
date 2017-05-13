@@ -1,0 +1,58 @@
+= Filtering request based on their HTTP method =
+[[PageOutline]]
+
+HTTP offers a mechanism by which a server can reject a request following the method used. For instance you may want to force a page handler to be applied only when a {{{POST}}} request has been made and infom the user-agent of that constraint.
+
+== Using the builtin !MethodDispatcher ==
+
+!CherryPy 3 comes with a !MethodDispatcher which allows your page handlers to be named after the HTTP method they will handle: GET, POST, HEAD, etc. For instance:
+
+{{{
+#!python
+import cherrypy
+
+class Root:
+    exposed = True
+
+    def GET(self):
+        return "some content"
+
+    def POST(self, name, password):
+        # do something
+        return "created"
+
+if __name__ == "__main__":
+   cherrypy.quickstart(Root(), config={'/': {'request.dispatch': cherrypy.dispatch.MethodDispatcher()}})
+}}}
+
+== Using the builtin default dispatcher ==
+
+In the previous section we have used a different dispatcher dedicated for handling the HTTP method of the request. However it may happen that you cannot use that dispatcher and would rather keep the default one. In that case you can use a tool such as:
+
+{{{
+#!python
+import cherrypy
+
+def http_methods_allowed(methods=['GET', 'HEAD']):
+    method = cherrypy.request.method.upper()
+    if method not in methods:
+        cherrypy.response.headers['Allow'] = ", ".join(methods)
+        raise cherrypy.HTTPError(405)
+
+cherrypy.tools.allow = cherrypy.Tool('on_start_resource', http_methods_allowed)
+
+class Root:
+    @cherrypy.expose
+    @cherrypy.tools.allow()
+    def echo(self, msg):
+        return msg
+    
+    @cherrypy.expose
+    @cherrypy.tools.allow(methods=['POST'])
+    def drop(self, msg):
+        return msg
+
+if __name__ == '__main__':
+    cherrypy.quickstart(Root())
+}}}
+

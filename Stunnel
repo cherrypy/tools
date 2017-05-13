@@ -1,0 +1,31 @@
+= Stunnel =
+
+[http://www.stunnel.org stunnel] can be used to wrap a CherryPy server with SSL. It is cross-platform and can be run on the same machine as the service it is protecting or a different one.
+
+Create an stunnel.conf like this example (see the [http://www.stunnel.org stunnel site] for detailed information on configuring stunnel):
+
+{{{
+cert=stunnel.pem
+debug=6
+
+[cherrypy]
+accept=8443
+connect=8080
+TIMEOUTclose=0
+}}}
+
+Then, use the "proxy" tool in your config:
+{{{
+[global]
+tools.proxy.on = True
+tools.proxy.base = 'https://my.publicdomain.com:8443'
+}}}
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+||   || replace this || with this    ||
+||2.2||tools.proxy   ||baseurl_filter||
+||2.1||baseurl_filter||baseUrlFilter ||

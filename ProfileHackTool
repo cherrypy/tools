@@ -1,0 +1,4 @@
+A crude tool for profiling single CherryPy requests with an (included) hacked profile.py and displaying the results as a time-weighted call-trace diagram using [http://graphviz.org/ GraphViz] 
+
+download attachment:cp-profiler.zip
+unpack and follow directions at the bottom of cp-test.py

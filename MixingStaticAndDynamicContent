@@ -1,0 +1,62 @@
+= Mixing Static and Dynamic Content in CherryPy 3 =
+
+[[PageOutline]]
+
+Here is one way to mix static and dynamic content in the same section with the index handled by a static page:
+
+== Example Source ==
+{{{
+import cherrypy
+
+class StaticAndDynamic(object):
+    _cp_config = {'tools.staticdir.on' : True,
+                  'tools.staticdir.dir' : '/path/to/your/static/file/directory',
+                  'tools.staticdir.index' : 'index.html',
+    }
+
+    @cherrypy.expose
+    def do_contact(self, **params):
+        """Stuff to make a contact happen."""
+        pass
+
+
+cherrypy.quickstart(StaticAndDynamic())
+}}}
+
+== Explanation ==
+The {{{StaticAndDynamic}}} class above is preconfigured with the staticdir tool enabled in the configuration.  That means wherever it is attached on the {{{cherrypy.tree}}} it will attempt to serve static content from {{{/path/to/your/static/file/directory}}}.  In the example above, it is rooted at the URI {{{/}}} since the {{{cherrypy.quickstart}}} function is used to launch the app and no specific path is specified.
+
+Imagine that {{{/path/to/your/static/file/directory}}} contains the following files:
+{{{
+index.html
+about.html
+contact.html
+}}}
+
+Requests to the following URIs will all be handled by CherryPy by loading the associated static file:
+{{{
+http://yourserver:8080/index.html
+http://yourserver:8080/about.html
+http://yourserver:8080/contact.html
+}}}
+
+=== staticdir/staticfile Order: Static First, Dynamic Second ===
+Now, imagine that {{{contact.html}}} contains a form with the action set to {{{http://yourserver:8080/do_contact}}}.  Even though the CherryPy application is serving static content at {{{/}}}, if it can't find a file on disk it will try to find a dynamic handler for the requested resource.  So after an attempt to serve {{{/path/to/your/static/file/directory/do_contact}}} fails, CherryPy will attempt to lookup a dynamic handler.  This is what enables you to easily mix both static and dynamic content in the same section of a site.
+
+In most cases, the above will work just fine. But when running a heavily-loaded site, it may be too slow for CherryPy to load the static tool, search for a matching file on disk, then run the dynamic handler. Instead, you can simply turn off the static tool for any subpath; for example, you can extend the above code as follows:
+
+{{{
+#!python
+    @cherrypy.expose
+    def do_contact(self, **params):
+        """Stuff to make a contact happen."""
+        pass
+    do_contact._cp_config = {'tools.staticdir.on': False}
+}}}
+
+...in which case, CherryPy will not even load the tool for that path. This is so because CherryPy always tries to find a handler function first (and load its config); only afterward will it invoke the static tool, and then (if the static tool fails to find a file) the handler function is called.
+
+
+== See Also ==
+http://www.cherrypy.org/wiki/StaticContent
+

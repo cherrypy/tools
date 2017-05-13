@@ -1,0 +1,158 @@
+== Using CherryPy with Dejavu ==
+
+[http://www.aminus.net/dejavu/ Dejavu] is an Object-Relational Mapper library, supporting MySQL, PostgreSQL, SQLite, Microsoft Access, Microsoft SQL Server, shelve, and custom stores. To use it with CherryPy, we create a new sandbox for each request, using a tool which then cleans it up for us automatically:
+
+{{{
+#!python
+import types
+import cherrypy
+from cherrypy._cperror import format_exc
+
+def flush_sandbox():
+    if hasattr(cherrypy.request, "sandbox"):
+        try:
+            try:
+                cherrypy.request.sandbox.flush_all()
+            except:
+                cherrypy.log(format_exc(), "DEJAVU")
+        finally:
+            del cherrypy.request.sandbox
+
+def try_flush_sandbox():
+    if cherrypy.response.stream:
+        # If the body is being streamed, we have to save the data
+        #   *after* the response has been written out
+        cherrypy.request.hooks.attach('on_end_request', flush_sandbox)
+    else:
+        # If the body is not being streamed, we save the data now
+        if isinstance(cherrypy.response.body, types.GeneratorType):
+            cherrypy.response.collapse_body()
+        flush_sandbox()
+
+class SandboxTool(cherrypy.Tool):
+    def _setup(self):
+        cherrypy.request.sandbox = arena.new_sandbox()
+        cherrypy.Tool._setup(self)
+cherrypy.tools.sandbox = SandboxTool('on_end_resource', try_flush_sandbox)
+}}}
+
+Turn it on and then reference cherrypy.request.sandbox in your page handlers. In your startup script (the one that calls cherrypy.server.start), write:
+
+{{{myapp.arena.load(r"C:\myapp\myappsm.conf")}}}
+
+The filename should be that of a Dejavu configuration file. How's *that* for simple integration? :)
+
+Her's a simple example demonstrating how to use the sandbox in your page handler:
+
+{{{
+#!python
+import dejavu
+from dejavu import Unit, UnitProperty
+
+# global dejavu arena which will handle 
+# all the dejavu work
+arena = dejavu.Arena()
+
+# Creates a specific unit that will handle our messages
+# This will have only one single field
+# that will be translated into a column
+# in the database we'll be using
+class Message(Unit):
+    # Note two things:
+    # 1. We do not explicitly specify an ID field
+    #    as dejavu does it already
+    # 2. The property is per-class not per-instance
+    content = UnitProperty(unicode)
+    
+class Root(object):
+    def __init__(self):
+        # Purely for this example purpose we enable dejavu's log 
+        # to see what SQL queries dejavu generates
+        arena.logflags += dejavu.logflags.SQL
+        arena.logflags += dejavu.logflags.FORGET
+        
+        # Add a store to the dejavu arena
+        # The storage we choose is a SQLite in-memory database
+        # that will disappear once the process exits
+        arena.add_store("main", "sqlite", {'Database': ":memory:"})
+
+        # Inform the arena which unit we will be dealing with
+        arena.register_all(globals())
+   
+        # Let's explicitly allocate the space 
+        # in the storage for our unit (i.e. translated into a db table here)
+        arena.create_storage(Message)
+    
+    @cherrypy.expose
+    def index(self):
+        page = """<html>
+        <head>
+            <title>Dejavu sample</title>
+        </head>
+        <body>"""
+
+        # let's retrieve all existing messages from the storage
+        messages = cherrypy.request.sandbox.recall(Message)
+        for message in messages:
+            # adding them to the HTML code of our page
+            page = page + '<span style="display:block;">%s</span>' % message.content
+
+        # and a way too add new messages
+        page = page + """
+          <form action="/save" method="post">
+             <input type="text" name="message" />
+             <input type="submit" />
+          </form>
+        </body>
+        </html>
+        """
+        return page
+
+    @cherrypy.expose
+    def save(self, message):
+        # Let's create a Message instance...
+        msg = Message(content=message)
+
+        # ... that we then tell the sandbox, managed
+        # by the CherryPy tool, to track.
+        # The actual storing into the underlying storage
+        # (i.e. the database INSERT) happens in the
+        # cherrypy tool
+        cherrypy.request.sandbox.memorize(msg)
+
+        raise cherrypy.HTTPRedirect('/')
+    
+
+if __name__ == '__main__':
+    conf = {'/': {'tools.sandbox.on': True}}
+    cherrypy.quickstart(Root(), '/', conf)
+}}}
+
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+== 2.2 ==
+
+{{{
+#!python
+class DejavuSandboxFilter(object):
+    """Creates and auto-flushes a Dejavu Sandbox for each request."""
+    
+    def onStartResource(self):
+        """Called after the request body has been read/parsed"""
+        cherrypy.request.sandbox = endue.arena.new_sandbox()
+    
+    def onEndRequest(self):
+        """Called after writing the response (header & body included)"""
+        if hasattr(cherrypy.request, "sandbox"):
+            try:
+                try:
+                    cherrypy.request.sandbox.flush_all()
+                except:
+                    cherrypy.log(_cputil.formatExc(), "DEJAVU")
+            finally:
+                del cherrypy.request.sandbox
+}}}

@@ -1,0 +1,9 @@
+A [http://en.wikipedia.org/wiki/Framework framework] that provides for browser event handling on the CherryPy server and (simulated) server data pushes out to the web browser.  Includes a simple chat server to demonstrate the code. 
+
+KevinDahlhausen
+
+== Problems ==
+
+The CherryChat example does not work for me. I am using win98se and python 2.4. When I run the CherryChat program, then open up IE to http://localhost:8080, it keeps spamming the window with '1 joined the chat' over and over. When I open up another browser to http://localhost:8080, it spams both browsers with '2 joined the chat' over and over and over again. When I type something in and hit 'send' it only shows up in the browser I typed it into, and it doesn't always even do that. 
+
+--- 6/27/05:  I'll take a look at that.  I tested w/IE on XP and Firefox on Linux. Kevin

@@ -1,0 +1,115 @@
+= Multiple HTTP Servers =
+Implementing multiple HTTP servers as described in !CherryPy Essentials is no longer supported (see ticket #752, not there anymore?).  I have been able to develop an alternative method that replaces it.
+
+This method uses a configuration file, so you will have to rework it if you want the configuration data to be hard-coded.
+
+Here is an example of the `httpservers.ini` configuration file:
+{{{
+#httpservers.ini
+[HTTP_Addresses]
+Host_1:192.168.0.10
+Port_1:8080
+# localhost in any case will be changed to 127.0.0.1
+Host_2:LOCALHOST
+Port_2:8008
+# IPv6 may not be valid on old systems
+Host_3:[::1]
+# If blank or nonexistent will default to 80
+Port_3:
+}}}
+Note that this is a standard format `ini` file, not the !CherryPy version that requires values that are Python datatypes.
+
+This file goes in the same folder as the sample page below.
+
+Here is the source code for a sample page:
+{{{
+#!python
+import ConfigParser
+import cherrypy
+from cherrypy import _cpserver
+from cherrypy import _cpwsgi_server
+
+class Home:
+
+    def index(self):
+        return 'Hello World from multiple HTTP addresses'
+
+    index.exposed=True
+
+oConf=ConfigParser.ConfigParser()
+oConf.read('httpservers.ini')
+i=0;bFirst=True;lXSvrs=[];sSect='HTTP_Addresses'
+while True:
+    i+=1
+    sOptHost='Host_%i'%i
+    sOptPort='Port_%i'%i
+    if oConf.has_option(sSect,sOptHost):
+        sHost=oConf.get(sSect,sOptHost)
+        if len(sHost)>0:
+            if sHost.lower()=='localhost':
+                sHost='127.0.0.1'
+            try:
+                iPort=oConf.getint(sSect,sOptPort)
+            except:
+                iPort=80
+            if bFirst:
+                bFirst=False
+                cherrypy.config.update({
+                    #'environment':'production',
+                    'server.socket_host':sHost,
+                    'server.socket_port':iPort,
+                    'log.access_file':'access.log',
+                    'log.error_file':'error.log',
+                    'log.screen':True
+                })
+            else:
+                lXSvrs.append(_cpwsgi_server.CPWSGIServer())
+                lXSvrs[-1].bind_addr=(sHost,iPort)
+                lXSvrs.append(_cpserver.ServerAdapter(cherrypy.engine,lXSvrs[-1],(sHost,iPort)))
+                lXSvrs[-1].subscribe()
+    else:
+        break
+try:
+    del oConf,i,bFirst,sSect,sOptHost,sOptPort,sHost,iPort
+except:
+    raise RuntimeError,'ABORT: httpservers.ini file is invalid.'
+
+cherrypy.tree.mount(Home(),'/',config={
+    '/':{
+        'tools.response_headers.on':True,
+        'tools.response_headers.headers':[
+            ('Content-Type','text/plain')
+        ]
+    }
+})
+cherrypy.engine.start()
+cherrypy.engine.block()
+}}}
+----
+
+
+Here's that same code stripped down to the bare essentials, showing the addition of an SSL port:
+
+{{{
+#!python
+import cherrypy
+from cherrypy import _cpserver
+from cherrypy import _cpwsgi_server
+
+secure_server = _cpwsgi_server.CPWSGIServer()
+secure_server.bind_addr = ('0.0.0.0', 443)
+secure_server.ssl_certificate = '/etc/myapp/server.pem'
+secure_server.ssl_private_key = '/etc/myapp/server.pem'
+adapter = _cpserver.ServerAdapter(cherrypy.engine, secure_server, secure_server.bind_addr)
+adapter.subscribe()
+
+cherrypy.config.update({
+    'server.socket_host': '0.0.0.0',
+    'server.socket_port': 80,
+})
+
+cherrypy.engine.start()
+cherrypy.engine.block()
+}}}
+
+''--fumanchu''

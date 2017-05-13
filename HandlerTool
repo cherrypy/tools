@@ -1,0 +1,118 @@
+= Handler Tools =
+
+A rather special kind of {{{Tool}}} is the {{{HandlerTool}}}. A HandlerTool
+provides a way to hook up code (functions, or callables in general)
+that will run just before a normal request-handler is called. On the
+outset, a handler tool is little more a {{{Tool}}} that has been created
+with its {{{point}}} being {{{before_handler}}}. That is:
+
+{{{
+#!python
+cherrypy.tools.my_tool = cherrypy.Tool('before_handler', my_func)
+}}}
+
+and:
+
+{{{
+#!python
+cherrypy.tools.my_handler_tool = cherrypy._cptools.HandlerTool(my_func)
+}}}
+
+are, on the outset, very similar. There are, though, two '''significant
+differences''':
+
+{{{
+#!html
+<ol>
+<li>
+}}}
+
+The handler tool provides an additional method (called {{{handler}}})
+that can be used to create a normal request-handler from it, like this:
+
+   {{{
+   #!python
+   class MyClass:
+       my_handler = cherrypy.tools.my_handler_tool.handler(kwargs)
+   }}}
+
+With this {{{my_handler}}} has become a regular request-handler,
+already exposed and all.
+
+{{{
+#!html
+</li>
+<li>
+}}}
+
+If the handler tool is used as a hook, it provides a way to
+suppress the normal request-handler from running. This is very
+useful in several cases (e.g. you can use handler-tools to
+authorize access to parts of your application. If authorization
+fails you can suppress the normal request handler from running). To
+do this the tool's callable must return {{{True}}}. If instead it
+returns {{{False}}} then the normal handler will run as soon as the
+tool returns. You can think of it like this, if you prefer: The
+return value of the HandlerTool's callable indicates whether the
+tool has handled the request or not. If not the normal handler will
+be called to do so.
+
+{{{
+#!html
+</li>
+</ol>
+}}}
+
+Let's see an example. We define a function called {{{authorize}}}. This
+function checks if the session has a key called {{{allow}}}. If so the
+user is allowed to see the page, otherwise she's not (how the key got
+set is not our concern---not for the purposes of this example).
+
+{{{
+#!python
+def authorize():
+    allow = cherrypy.session.get('allow')
+    if allow:
+        # allow normal handler to run
+        return False
+    else:
+        cherrypy.response.body = "<html>" \
+                                 "<head><title>Not allowed</title></head>" \
+                                 "<body>You are not allowed to see this!</body>" \
+                                 "</html>"
+        try:
+          del cherrypy.response.headers["Content-Length"]
+        except KeyError:
+          pass
+        # suppress normal handler from running
+        return True
+}}}
+
+Observe that the function returns {{{False}}} if there is a key
+{{{allow}}} in the session, and {{{True}}} if there is not. Now lets
+create a HandlerTool based on the function above:
+
+{{{
+#!python
+cherrypy.tools.authorize = cherrypy._cptools.HandlerTool(authorize)
+}}}
+
+And finally lets write a class that uses the tool:
+
+{{{
+#!python
+class SecretStuff:
+    _cp_config = {'tools.authorize.on': True}
+    def index (self):
+       return "<html>" \
+              "<head><title></title></head>" \
+              "<body>Secret stuff indeed!</body>" \
+              "</html>"
+    index.exposed = True
+}}}
+
+Whenever a method of the class {{{SecretStuff}}} is called to handle the request, our authorize
+tool will run first. The tool will check if an "allow" key is present in the session and, 
+if so, it will return {{{False}}} (saying in effect: "I have not handled the request"). As a result the normal handler ({{{SecretStuff.index}}} in our example) will run. If on the other 
+hand the tool finds no "allow" key, it will put a warning message in {{{response.body}}} and
+return {{{True}}} ("I have handled the request"), suppressing the execution of the normal handler.

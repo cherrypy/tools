@@ -1,0 +1,114 @@
+Here is a simple application which runs as a standalone system:
+
+{{{
+#!python
+import webbrowser
+import cherrypy
+
+class MyApp:
+    """ Sample request handler class. """
+
+    def index(self):
+        return """<html><head><title>An example application</title></head>
+<body>
+<h1>This is my sample application</h1>
+Put the content here...
+<hr>
+<a href="/exit">Quit</a>
+</body></html>"""
+    index.exposed = True
+
+    def exit(self):
+	raise SystemExit(0)
+    exit.exposed = True
+
+cherrypy.tree.mount(MyApp())
+cherrypy.engine.start(blocking=False)
+cherrypy.server.socket_port = 8765
+cherrypy.server.quickstart()
+webbrowser.open("http://127.0.0.1:8765")
+cherrypy.engine.block()
+}}}
+
+OK, so how does it work?
+
+First of all, you have a standard !CherryPy application (class !MyApp). Then you have the startup code. After you start the server, use the webbrowser module to start a browser pointing at the application's home page. Then, block. The application will now run as a normal !CherryPy application.
+
+Note the "Quit" link on the application page. This redirects the browser to the "/exit" URL, which stops the !CherryPy server.
+
+Many of the ideas here came from "[http://mindview.net/WebLog/log-0045 Browser as Desktop UI]", which describes
+a similar application, but using Python's SimpleHTTPServer module.
+
+== py2exe ==
+
+Here's a bare-bones example of how to bundle the above !CherryPy application using [http://starship.python.net/crew/theller/py2exe/ py2exe]. Assume that the above module is called app.py,
+then you need a setup.py script something like this:
+
+{{{
+#!python
+from distutils.core import setup
+import py2exe
+
+setup(
+    # The first three parameters are not required, if at least a
+    # 'version' is given, then a versioninfo resource is built from
+    # them and added to the executables.
+    version = "0.1.0",
+    description = "Sample CherryPy standalone app with py2exe",
+    name = "CherryPy sample",
+
+    # Exclude OpenSSL, unless we are building a https server
+    options = { 'py2exe': { 'excludes': 'OpenSSL', "packages": ["encodings", "email"] }},
+
+    # targets to build. You may want to make this "windows" rather than
+    # "console", to avoid a console window opening. But if you do, you
+    # need some way of showing log information
+    console = ["app.py"],
+    )
+}}}
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+== 2.2 ==
+
+Replace:
+{{{
+cherrypy.tree.mount(MyApp())
+cherrypy.engine.start(blocking=False)
+cherrypy.server.socket_port = 8765
+cherrypy.server.quickstart()
+webbrowser.open("http://127.0.0.1:8765")
+cherrypy.engine.block()
+}}}
+
+...with:
+
+{{{
+cpg.root = MyApp()
+webbrowser.open("http://127.0.0.1:8765")
+cpg.server.start(configMap = {'socketPort': 8765})
+}}}
+
+Assuming no timing problems (it works on my machine) the browser will start up showing the application main page. If there are timing problems, you can just wrap the webbrowser call in a timer, to delay it by a second or so. Example: {{{threading.Timer(1, webbrowser.open, ("http://127.0.0.1:8765",)).start()}}}
+
+== 2.1 ==
+
+Replace {{{raise SystemExit(0)}}} with:
+
+{{{
+import threading
+threading.Timer(1, cherrypy.server.stop).start()
+return """<html><head><title>System Terminated</title></head>
+<body>
+<h1 align="center">System Terminated</h1>
+</body>
+</html>
+"""
+}}}
+
+== 2.0 ==
+
+Replace {{{import cherrypy}}} with {{{from cherrypy import cpg as cherrypy}}}

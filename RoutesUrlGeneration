@@ -1,0 +1,152 @@
+= Routes URL generation =
+
+For those who use Routes and RoutesDispatcher, making use of the url generation capabilities can be a great timesaver.
+
+To make Routes generate a url, call {{{routes.url_for}}} with keyword parameters corresponding to the Routes rules. To account for urls hidden behind mod_proxy or mod_rewrite it's also good to pass that url through {{{cherrypy.url}}}.
+
+Say we have this setup:
+
+{{{
+#!python
+# -*- encoding: UTF-8 -*-
+import os
+
+import cherrypy
+
+class MainController:
+    
+    def index(self):
+        return "This is the main page"
+
+class BlogController:
+
+    def index(self, entry_id):
+        return "This is blog entry no. %d" % int(entry_id)
+
+    def edit(self, entry_id):
+        return "This is an edit form for blog entry no. %d" % int(entry_id)
+
+
+dispatcher = None
+
+def setup_routes():
+    d = cherrypy.dispatch.RoutesDispatcher()
+    d.connect('blog', 'myblog/:entry_id/:action', controller=BlogController())
+    d.connect('main', ':action', controller=MainController())
+    dispatcher = d
+    return dispatcher
+
+conf = {
+    '/': {
+        'request.dispatch': setup_routes()
+    },
+    '/static': {
+        'tools.staticdir.on': True,
+        'tools.staticdir.root': os.path.dirname(os.path.abspath(__file__)),
+        'tools.staticdir.dir': 'static'
+    }
+}
+
+def start(config=None):
+    if config:
+        cherrypy.config.update(config)
+    app = cherrypy.tree.mount(None, config=conf)
+    cherrypy.quickstart(app)
+
+if __name__ == '__main__':
+    start(os.path.join(os.path.dirname(__file__), 'app.conf'))
+
+}}}
+
+To make use of Routes url-generation, we can for example call {{{cherrypy.url(routes.url_for(controller="blog", action="edit", entry_id="123"))}}} - which generates an url that goes straight to the edit form of blog entry 123. It might be something like {{{http://www.example.org/my_cp_app/myblog/123/edit}}}.
+
+Calling {{{cherrypy.url(routes.url_for(...))}}} is tedious, especially for a template designer, so let's make things easier:
+
+My goal here is to provide one function - {{{url}}} - which transparently handles both the role of {{{cherrypy.url}}} and {{{routes.url_for}}}. In it's simplest form it looks like this:
+
+{{{
+#!python
+import routes
+import cherrypy
+
+def url(*args, **kwargs):
+    if len(args) == 1 and len(kwargs) == 0 and type(args[0]) in (str, unicode):
+        return cherrypy.url(args[0])
+    else:
+        return cherrypy.url(routes.url_for(*args, **kwargs))
+}}}
+
+This makes it possible to do things like this
+{{{
+#!python
+>>> url('/static/css/main.css')
+'http://www.example.org/path_to_webapp/static/css/main.css'
+>>> url(controller="main")
+'http://www.example.org/path_to_webapp'
+>>> url(controller="blog", action="edit", entry_id=123)
+'http://www.example.org/path_to_webapp/myblog/123/edit'
+}}}
+
+I find the most common use is the last one, specify a controller, an action and some parameters. In most cases, a controller is a class instance and the action is a method. This makes me want to write something like this:
+{{{
+#!python
+>>> url.blog.edit(entry_id=123)}
+'http://www.example.org/path_to_webapp/myblog/123/edit'
+}}}
+
+Of course, this is easy in Python, with the following definition of {{{url}}}
+{{{
+#!python
+import routes
+import cherrypy
+
+class _ctrlchain(object):
+ 
+    def __init__(self, name, head=None):
+        if head is None:
+            self.chain = list()
+        else:
+            self.chain = head[:]
+        self.chain.append(name)
+ 
+    def __getattr__(self, attr):
+        return _ctrlchain(attr, self.chain)
+ 
+    def __call__(self, *args, **kwargs):
+        if len(self.chain) > 3:
+            raise Exception("Don't know what to do with over 3 chain elements")
+        if len(self.chain) > 2:
+            kwargs["action"] = self.chain[2]
+        if len(self.chain) > 1:
+            kwargs["controller"] = self.chain[1]
+ 
+        if len(args) == 1 and len(kwargs) == 0 and type(args[0]) in (str, unicode):
+            return cherrypy.url(args[0])
+        else:
+            return cherrypy.url(routes.url_for(*args, **kwargs))
+ 
+url = _ctrlchain('urlgen')
+}}}
+
+This correctly handles all the use cases above. For good measure, here are some more:
+{{{
+#!python
+>>> url.main()
+'http://www.example.org/path_to_webapp'
+>>> url.blog(entry_id=123)
+'http://www.example.org/path_to_webapp/myblog/123'
+}}}
+
+Of course, this becomes most useful when this function is made available in whatever template language you are using:
+{{{
+#!xml
+<li py:for="entry in blog.select()">
+    <a href="${url.blog(entry_id=entry.id)}" py:content="entry.title">Placeholder for entry title</a>
+</li>
+}}}
+
+For more information on Routes url generation check the Routes documentation: http://routes.groovie.org/module-routes.html#url_for
+
+-- Arnar (arnarbi at gmail)
+
+For more information about what kind of urls can be matched with Routes and how to do so, take a look at RoutesUrlMatching

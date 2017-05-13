@@ -1,0 +1,114 @@
+= Strip white characters among html tags in your pages with CherryPy =
+
+{{{
+#!python
+import re
+
+class StripWhiteChars(object):
+    """
+    Stripping all "white characters" among html tags.
+
+    Author: Jaroslaw Zabiello (http://zabiello.com)
+    Version: 2004-11-26    
+    """
+    omitTags = ['xmp', 'pre', 'script', 'style', 'textarea', 'code']
+    
+    def __init__(self):
+        # new object style: http://python.org/doc/newstyle.html
+        super(StripWhiteChars, self).__init__() 
+        self.mark = []
+        for tag in self.omitTags:
+            pattern = '<'+tag+r'[^>]*?>.*?</'+tag+'>'
+            record = {'tag': tag, 'regex': re.compile(pattern, re.IGNORECASE|re.MULTILINE|re.DOTALL),}        
+            self.mark.append(record)
+        self.regexStrip = re.compile(r'(<[^>]+?>)[\s]+?(<[^>]+?>)', re.MULTILINE|re.DOTALL)
+
+    def strip(self, html):
+        marked = {}
+        for dic in self.mark:
+            found = dic['regex'].findall(html)
+            for i in xrange(len(found)):
+                replaced = '@@@STRIPPED%s%d@@@' % (dic['tag'], i)
+                html = html.replace(found[i], replaced)
+                marked[replaced] = found[i]
+        while self.regexStrip.search(html):
+            html = self.regexStrip.sub(r'\1\2', html)
+        for replaced, source in marked.iteritems():
+            html = html.replace(replaced, source)
+        return html
+        
+if __name__=='__main__':
+    # test:
+    html = '''
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="pl">
+<head>
+<title>To jest test</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-2" />
+<meta name="language" content="pl" />
+<meta name="robots" content="all" />
+<style type="text/css" media="all">@import "/styles/glowna.css";</style>
+<script type="text/javascript" src="/scripts/funkcje.js"> </script>
+</head>
+<body id>
+<div id="accessibility">goto  [<a href="#menu">part one</a>] [<a href="#search">part two</a>]</div>
+
+<div id="container">
+        <script language="JavaScript">
+            <!--
+            document.write('<code>  to   jest  test</code>')
+            //-->
+            </script>            <code>
+            To jest
+            jakis  kod
+            </code>          <script>
+            <!--
+                document.write('to jest script2')
+            //-->
+            </script>
+            <table border=0>
+                <tr>
+                    <td>
+                        <A HREF="http://python.org">
+                        <font color="red">Python HomePage</font>
+                        </A>
+                    </td>
+                </tr>
+            </table>
+</div>
+        </body>
+    </html>
+    '''
+    test = StripWhiteChars()
+    print test.strip(html)
+}}}
+
+It can be added to !CherryPy as filter:
+
+{{{
+#!python
+from cherrypy import cpg
+from cherrypy.lib.filter.basefilter import BaseOutputFilter
+
+class StripWhiteCharsFilter(BaseOutputFilter):
+    """Filter stripping all white-chars among html tags"""
+    def __init__(self):
+        super(StripWhiteCharsFilter, self).__init__()
+        self.obj = StripWhiteChars()
+    def beforeResponse(self):
+        cpg.response.body = [self.obj.strip(''.join(cpg.response.body))]
+
+testhtml = '<html>.....</html>'
+
+class Root(object):
+    """main"""
+
+    _cpFilterList = [StripWhiteCharsFilter()]
+
+    def index(self, **kwargs):
+        return testhtml
+    index.exposed = True
+
+cpg.root = Root()
+cpg.server.start(configFile = 'Root.conf')
+}}}

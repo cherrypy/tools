@@ -1,0 +1,20 @@
+= CherryPy with Kid Template Language (Kid) =
+
+Kid official page: [http://kid-templating.org/]
+
+"Kid is a simple cross-platform pythonic template language for XML based vocabularies written in Python."
+
+{{{
+#!python
+import kid
+
+class HomePage:
+
+    def index(self):
+        # Make a new instance per request to avoid concurrency issues
+        test = kid.Template(file='test.kid')
+        test.title = "Test Kid Page"
+        test.lines = ['qwe','asd','zxc']
+        return test.serialize(output='xhtml')
+    index.exposed = True
+}}}

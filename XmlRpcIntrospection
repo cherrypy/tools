@@ -1,0 +1,162 @@
+== Introspection support for XML-RPC aware application ==
+
+"[http://www.xmlrpc.com/spec XML-RPC] is a Remote Procedure Calling protocol that works over the Internet."
+
+Sometimes your XML-RPC application gets so large that it becomes hard to remember what remote method can be called. Therefore a set of functions have been standardized to get some information about your application.
+
+The [http://docs.python.org/lib/serverproxy-objects.html xmlrpclib] module suggests the following RPC method calls:
+
+ * system.listMethods()
+ * system.methodSignature(name)
+ * system.methodHelp(name)
+
+They use introspection to retrieve information about your application.
+
+This recipe tries to provide a simple implementation of those RPC method calls. It onlu supports listMethods() and methodHelp() for now.
+
+{{{
+import inspect
+
+
+class XmlRpcSystemInformation:
+    """Defines some introspection function for an XML-RPC server application handled by CherryPy"""
+    # See http://docs.python.org/lib/serverproxy-objects.html
+    
+    def __init__(self):
+        self.rpcmethods = {}
+    
+    def register_class(self, classInstance, instancePath=None):
+        """Registers the given class exposed methods
+        
+        Keyword arguments:
+        classInstance -- class instance which will be scanned for exposed methods
+        instancePath -- sets the path to the instance (eg: obj1.obj2 for obj1.obj2.methodName)
+        """
+        for method in inspect.getmembers(classInstance, inspect.ismethod):
+            if getattr(method[1], 'exposed', False) == True:
+                if instancePath:
+                    self.rpcmethods[instancePath + '.' + method[0]] = method[1]
+                else:
+                    self.rpcmethods[method[0]] = method[1]
+    
+    def listMethods(self):
+        """Return a list of all methods callable on the RPC server."""
+        return self.rpcmethods.keys()
+    listMethods.exposed = True
+    
+    def methodHelp(self, methodName):
+        """Return the doc string of the given method (or a default message)."""
+        if methodName not in self.rpcmethods:
+            raise LookupError, "This method is not registered on this server"
+        
+        method = self.rpcmethods[methodName]
+        doc = method.__doc__
+        if not doc:
+            raise ValueError, 'No available help for ' + methodName
+        return doc
+    methodHelp.exposed = True
+
+
+if __name__ == '__main__':
+    import cherrypy
+    
+    class A:
+        def hello(self):
+            return "hello there from A"
+        hello.exposed = True
+
+    class B:
+        def hello(self):
+            return "hello there from B"
+        hello.exposed = True
+        
+    class Root:
+        def echo(self, value=''):
+            """Return the supplied value (default '')"""
+            return value
+        echo.exposed = True
+    
+    # Let's build the tree of exposed objects
+    root = Root()
+    root.a = A()
+    root.a.b = B()
+    
+    # Attach each exposed object (part of the XML-RPC application)
+    # to the object dealing with introspection
+    system = XmlRpcSystemInformation()
+    system.register_class(root)
+    system.register_class(root.a, 'a')
+    system.register_class(root.a.b, 'a.b')
+    
+    root.system = system
+    cherrypy.quickstart(root, config={'/': {'tools.xmlrpc.on': True}})
+    
+    # Your client could then try:
+##     import xmlrpclib
+##     server = xmlrpclib.ServerProxy('http://localhost:8080/')
+##     server.system.listMethods() # will return ['a.hello', 'a.b.hello', 'echo']
+##     server.system.methodHelp('echo') # will return the help for echo
+##     server.system.methodHelp('a.b.hello') # will raise xmlrpclib.Fault: 'No available help for a.b.hello'
+##     server.system.methodHelp('ech') # will raise xmlrpclib.Fault because cho doesn't exist
+##     server.system.methodHelp() # will raise a xmlrpclib.ProtocolError because methodHelp takes at least one arg
+}}}
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+== 2.2 ==
+
+Add the following to the XmlRpcSystemInformation class:
+
+{{{
+class XmlRpcSystemInformation:
+
+    def _cpOnError(self):
+        # We make sure that the errors we explicitely raise
+        # are not handled by the default CP error handler
+        import sys
+        error_type = sys.exc_info()[0]
+        if error_type in (LookupError, ValueError):
+            return
+        # default CP error handler...
+        cherrypy.HTTPError(500).set_response()   
+}}}
+
+...and replace:
+
+{{{
+    root = Root()
+    root.a = A()
+    root.a.b = B()
+    
+    # Attach each exposed object (part of the XML-RPC application)
+    # to the object dealing with introspection
+    system = XmlRpcSystemInformation()
+    system.register_class(root)
+    system.register_class(root.a, 'a')
+    system.register_class(root.a.b, 'a.b')
+    
+    root.system = system
+    cherrypy.quickstart(root, config={'/': {'tools.xmlrpc.on': True}})
+}}}
+
+...with:
+
+{{{
+    cherrypy.root = Root()
+    cherrypy.root.a = A()
+    cherrypy.root.a.b = B()
+
+    # Attach each exposed object (part of the XML-RPC application)
+    # to the object dealing with introspection
+    system = XmlRpcSystemInformation()
+    system.register_class(cherrypy.root)
+    system.register_class(cherrypy.root.a, 'a')
+    system.register_class(cherrypy.root.a.b, 'a.b')
+    
+    cherrypy.root.system = system
+    cherrypy.config.update({'global': {'xmlRpcFilter.on':True}})
+    cherrypy.server.start()
+}}}

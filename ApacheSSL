@@ -1,0 +1,83 @@
+= Apache SSL =
+
+One of the advantages of running CherryPy behind Apache is that you can use Apache to handle SSL (among other things).  Allowing Apache to handle the connections is fine if you only need to serve up secure pages, but it is quite common to want to serve both secure and non-secure pages in the same site.  It is even more common to have pages that you only want to serve over a secure connection.  This document will outline one way to use Apache to serve secure connections and still allow CherryPy to know whether or not the connection is secure or not.
+
+== CherryPy Can Read Headers Set by Apache ==
+
+The basic idea behind this recipe is that CherryPy can read headers set by Apache, and Apache can set and unset headers with the use of mod_headers.
+
+This particular configuration will assume that you have Apache set up to forward requests to CherryPy using mod_rewrite.  Something similar can probably be done with the other integration techniques, but I am not familiar with how this might be done.
+
+The first step is to make sure that Apache unsets the required header for non-ssl requests.  The configuration should look something like this:
+
+{{{
+<IfModule mod_headers.c>
+    # I test for this in Cherrypy to make sure we are secure.  So
+    # I need to make sure it is unset if the connection is not
+    # secure.
+    RequestHeader unset Secure
+</IfModule>
+}}}
+
+The ssl setup is similiar:
+
+{{{
+<IfModule mod_headers.c>
+    # I am not interested in the value of the header just whether 
+    # it is set or not.  Setting it to "Top Secret" is funny.
+    RequestHeader unset Secure
+    RequestHeader set Secure "Top Secret"
+</IfModule>
+}}}
+
+Once you have this set up you can start checking whether or not the connection is secure in your CherryPy application simply by looking for the required header.  I use a decorator to mark the methods that need to be secure.  If a request comes in unsecured the client is redirected to the secure url.
+
+{{{
+#!python
+import cherrypy
+import urlparse
+
+def secure(func):
+    func.secured = True
+
+    def make_secure(*args, **kwargs):
+        secure = cherrypy.request.headers.get("Secure", False)
+        if not secure:
+            url = urlparse.urlparse(cherrypy.url())
+            secure_url = urlparse.urlunsplit(('https', url[1], url[2],
+                                              url[3], url[4]))
+            raise cherrypy.HTTPRedirect(secure_url)
+        result = func(*args, **kwargs)
+        return result
+    
+    return make_secure
+}}}
+
+If you'd like to take full advantage of the Tool system in CherryPy 3, that's even easier to write:
+
+{{{
+#!python
+import cherrypy
+import urlparse
+
+def make_secure(header="Secure"):
+    secure = cherrypy.request.headers.get(header, False)
+    if not secure:
+        url = urlparse.urlparse(cherrypy.url())
+        secure_url = urlparse.urlunsplit(('https', url[1], url[2],
+                                          url[3], url[4]))
+        raise cherrypy.HTTPRedirect(secure_url)
+
+cherrypy.tools.secure = cherrypy.Tool('before_handler', make_secure)
+}}}
+
+Then you can turn it on (and even adjust the name of the header, if you don't like the default) in config:
+
+{{{
+[/path/to/secure/pages]
+tools.secure.on = True
+tools.secure.header = "Secure2"
+}}}
+
+
+One thing to remember is that if the client can connect directly to your CherryPy instance then it can send whatever headers it wants.  For this reason it is important that you firewall your CherryPy server so that all requests go through Apache first.

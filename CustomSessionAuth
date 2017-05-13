@@ -1,0 +1,42 @@
+So you want to customize session auth in CherryPy 3.0? Not a piece of cake, is it? I mean, you ''could'' make a custom login_screen function and just attach it in config like this:
+
+{{{
+[/]
+tools.session_auth.login_screen = my_login_func
+}}}
+
+...but that's not obvious if you're not used to metaprogramming (passing functions around). Here's a more class-based way to do it:
+
+{{{
+#!python
+import cherrypy
+from cherrypy.lib import cptools
+
+
+class MySessionAuth(cptools.SessionAuth):
+    
+    def login_screen(self, from_page='..', username='', error_msg=''):
+        return """<html><body>
+Message: %(error_msg)s!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+<form method="post" action="do_login">
+    Login: <input type="text" name="username" value="%(username)s" size="10" /><br />
+    Password: <input type="password" name="password" size="10" /><br />
+    <input type="hidden" name="from_page" value="%(from_page)s" /><br />
+    <input type="submit" />
+</form>
+</body></html>""" % {'from_page': from_page, 'username': username,
+                     'error_msg': error_msg}
+    
+    def runtool(cls, **kwargs):
+        sa = cls()
+        for k, v in kwargs.iteritems():
+            setattr(sa, k, v)
+        return sa.run()
+    runtool = classmethod(runtool)
+
+cherrypy.tools.my_session_auth = cherrypy._cptools.HandlerTool(MySessionAuth.runtool)
+}}}
+
+What I ''should'' have done was stuck that 'runtool' method in the builtin !SessionAuth class so you'd get it for free. Ah, hindsight. ;)
+
+''--fumanchu''

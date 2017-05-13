@@ -1,0 +1,208 @@
+= SCGI WSGI =
+
+This is a HOWTO. See BehindApache for a higher-level discussion.
+
+A very simple setup lets your cherry run under SCGI (on apache in my setup). You need just a running apache server with [http://www.mems-exchange.org/software/scgi/ mod_scgi] and have the scgi python module installed. You also need an SCGI front end to WSGI. In this case, I'm using the SCGI-->WSGI application proxy, aka "SWAP" from [http://pythonpaste.org/ Python Paste]. Here's a direct link to [http://pythonpaste.org/trac/file/Paste/trunk/paste/util/scgiserver.py "SWAP"]. If that link doesn't work, you may have to hunt down SWAP on your own.
+
+{{{
+#!python
+#!/usr/bin/python
+
+import cherrypy
+from paste.util.scgiserver import serve_application
+
+class HelloWorld:
+    
+    def index(self):
+        return "Hello world!"
+    index.exposed = True
+
+app = cherrypy.tree.mount(HelloWorld())
+cherrypy.engine.start(blocking=False)
+serve_application(application=app, prefix="/dynamic", port=4000)
+}}}
+
+The Apache configuration that goes along with this is as follows:
+
+{{{
+<Location "/dynamic">
+    SCGIServer 127.0.0.1 4000
+    SCGIHandler On
+</Location>
+}}}
+
+Alternatively you may use [http://www.saddi.com/software/news/archives/80-scgi-wsgi-1.1-released.html scgi-wsgi]
+
+The following example uses Python 3.2, lighttpd V1.4.26, scgi-wsgi-py3 V1.1 and CherryPy V3.2
+
+Download [http://www.saddi.com/software/news/archives/80-scgi-wsgi-1.1-released.html scgi-wsgi] I suggest using the latest code from mercurial.  Check it out, and follow the instructions in README to build it.
+
+Then create a sample application:
+
+your_webapp.py:
+{{{
+#!python
+#!/usr/bin/python3
+import sys
+import cherrypy
+
+# Check if we are a child of the SCGI-WSGI interface
+SCGIWSGI = (sys.argv[0] == 'scgi-wsgi')
+
+# Default configurations - could get from a file.
+ROOTCONFIG={'/':{}}
+GLOBALCONFIG={}
+
+# Adjust configurations to suit running under scgi-wsgi or native
+if SCGIWSGI:
+  WEBBASE='/your_webapp'
+else:
+  WEBBASE='/'
+  GLOBALCONFIG.update({'server.socket_host':"0.0.0.0",
+                       'server.socket_port': 8080,
+                       'server.thread_pool': 10})
+
+class Root:
+    @cherrypy.expose
+    def index(self):
+        return "Hello world!"
+
+class Branch:
+    @cherrypy.expose
+    def index(self):
+        return "Howdy"
+    
+    @cherrypy.expose 
+    def default(self, attr='abc'):
+        return attr.upper()
+    
+    @cherrypy.expose
+    def leaf(self, size=0):
+        return str(int(size) + 3)
+    
+# Set Global configuration
+cherrypy.config.update(GLOBALCONFIG)
+
+# Define our website pages
+root = Root()
+root.branch = Branch()
+app = cherrypy.tree.mount(root, script_name=WEBBASE, config=ROOTCONFIG)
+
+# If running under scgi-wsgi then we dont need the built in http server or auto-reload.
+if (SCGIWSGI) :
+  # Prevent default Built In HTTP Server running.
+  cherrypy.server.unsubscribe()
+  # Autorestart doesn't work under scgi-wsgi server.
+  cherrypy.config.update({'engine.autoreload_on':False})
+
+# Initialise signal handler.
+if hasattr(cherrypy.engine, 'signal_handler'):
+    cherrypy.engine.signal_handler.subscribe()
+
+# Initialise console control
+if hasattr(cherrypy.engine, "console_control_handler"):
+    cherrypy.engine.console_control_handler.subscribe()
+
+# Start the engine.
+cherrypy.engine.start()
+
+# Running standalone?  if so we need to block.
+if (not SCGIWSGI) :
+  cherrypy.engine.block()
+
+}}}
+
+This application will run standalone with the embedded http server standard with CherryPy.  But if you run it:
+{{{
+./scgi-wsgi -v your_webapp app
+}}}
+
+It will execute under the scgi-wsgi server and will be able to interface to Apache or Lighttpd.  I only have tested against Lighttpd.
+
+Example Lighttpd configs
+
+10-scgi.conf:
+{{{
+## SCGI programs have the same functionality as CGI programs,
+## but are considerably faster through lower interpreter startup
+## time and socketed communication
+##
+## Documentation: /usr/share/doc/lighttpd-doc/fastcgi.txt.gz
+##                http://redmine.lighttpd.net/projects/lighttpd/wiki/Docs:ConfigurationOptions#mod_fastcgi-fastcgi
+
+server.modules += ( "mod_scgi" )
+#debug.log-request-handling = "enable"
+#scgi.debug = 1
+}}}
+
+50-your_webapp.conf :
+{{{
+# Alias for your_webapp directory
+alias.url += (
+        "/imbibe" => "/opt/your_webapp/www",
+)
+
+$HTTP["url"] =~ "^/your_webapp" {
+  scgi.server = (
+                  "/" =>
+                    ( "127.0.0.1" =>
+                      (
+                        "host" => "127.0.0.1",
+                        "port" => 4000,
+                        "check-local" => "disable",
+                        "docroot" => "/opt/your_webapp/www"
+                      )
+                    )
+                )
+}
+}}}
+
+Place these files in your lighttpd "conf-available" directory and enable them with "lighttpd-enable-mod"
+
+restart Lighttpd.
+
+Browse to http://yourserver/your_webapp and you should see the sample running under Lighttpd using SCGI.
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+
+== 2.2 ==
+
+This example uses the VirtualPathFilter (not needed in CP 3); feel free to ignore it if you don't need it.
+
+{{{
+#!python
+#!/usr/bin/python
+
+import cherrypy
+from virtualpathfilter import VirtualPathFilter
+from cherrypy._cpwsgi import wsgiApp
+from paste.util.scgiserver import serve_application
+
+class HelloWorld:
+    """ Sample request handler class. """
+    _cpFilterList = [VirtualPathFilter()]
+
+    def index(self):
+        return "Hello world!"
+    index.exposed = True
+
+cherrypy.root = HelloWorld()
+cherrypy.config.update({
+    '/': {
+        'server.environment': 'development',
+	'virtualPathFilter.on': True,
+	'virtualPathFilter.prefix': "/dynamic"
+    }
+})
+
+# init cp
+cherrypy.server.start(initOnly=True, serverClass=None)
+
+# run the server
+serve_application(application=wsgiApp, prefix="/dynamic", port=4000)
+
+}}}

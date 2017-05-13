@@ -1,0 +1,140 @@
+= Running CherryPy behind Apache using mod_proxy =
+
+This is a HOWTO. See BehindApache for a higher-level discussion.
+
+== Basic Apache Configuration ==
+In order to follow along with this HOWTO your Apache setup needs to meet some prerequisites.  Make sure you have the following services/options enabled:
+  1. Name-based virtual hosting (docs for Apache [http://httpd.apache.org/docs/1.3/vhosts/name-based.html 1.3] and [http://httpd.apache.org/docs/2.0/vhosts/name-based.html 2.0]).
+  2. mod_proxy (docs for Apache [http://httpd.apache.org/docs/1.3/mod/mod_proxy.html 1.3] and [http://httpd.apache.org/docs/2.0/mod/mod_proxy.html 2.0]).
+
+If you are using Linux, your distribution might have specific ways to enable/configure these features.  See the documentation for your distribution for more details.
+
+== Basic !CherryPy "Application" ==
+
+Here is a basic "application" that returns a message with the current time to the browser.  Name it {{{app1.py}}}.
+
+{{{
+#!python
+# app1.py
+import time
+
+import cherrypy
+
+class HelloWorld(object):
+    @cherrypy.expose
+    def index(self):
+        yield "The current time is %s<br />" % time.ctime()
+        yield "A <a href='static/test.txt'>static file</a> served by Apache."
+
+appconf = {'/': {'tools.proxy.on':True,}
+       }
+
+cherrypy.config.update({'server.socket_port':8087})
+
+cherrypy.quickstart(HelloWorld(), '/', appconf)
+}}}
+
+== Locating your site at the root of a virtual host ==
+
+One powerful feature that Apache brings to the table is flexible virtual hosting.  You can setup multiple virtual hosts on a single machine.  This is a convenient way to partition separate websites and applications.  With mod_proxy, you can set your CherryPy based applications up as virtual hosts as well.
+
+=== Directory Structure ===
+We will use the following directory structure in this example:
+{{{
+/home/jdoe/www/
+/home/jdoe/www/app1.py
+/home/jdoe/www/htdocs/
+/home/jdoe/www/htdocs/static/
+/home/jdoe/www/htdocs/static/example.txt
+}}}
+
+=== Apache 2.0 Config Sample ===
+Here is an example Apache 2.0 configuration for our virtual host.
+
+{{{
+<VirtualHost *>
+    ServerAdmin you@yoursite.com
+    ServerName www.yoursite.com
+    ProxyPreserveHost On
+
+    DocumentRoot /home/user/www/htdocs
+
+    # this prevents the follow URL path from being proxied
+    ProxyPass /static !
+
+    # setup the proxy
+    <Proxy *>
+        Order allow,deny
+        Allow from all
+    </Proxy>
+    ProxyPass / http://localhost:8087/
+    ProxyPassReverse / http://localhost:8087/
+</VirtualHost>
+}}}
+The !ProxyPass and !ProxyPassReverse directives make Apache pass any requests for URLs below /myapp onto the !CherryPy server.  You need to tell them at what path in URL space they should map request to and from your proxied app.  In this case, since we want to own the root of the virtual server, we chose {{{/}}}.
+
+Once you have made the configuration changes to Apache, restart the server (usually {{{apache2ctl restart}}} or {{{apachectl restart}}}) and launch your !CherryPy application.      Your !CherryPy application should now respond to all requests at http://www.yoursite.com ''except'' http://www.yoursite.com/static - those requests will be handled by Apache and you will have the speed of Apache's static file handling at your disposal.
+
+== Locating your application away from the root of the host ==
+
+If you want to locate your application at a subdirectory of the URL space - for example, you want {{{http://www.yoursite.com/myapp/}}} to be the location of your application - you can use mod_proxy from within a {{{<Location>}}} element.
+
+''Note'': This may only work for Apache 2.
+
+=== Updates To The "Application" ===
+To facilitate using our application in a subdirectory of the URL space we need to tweak it a bit.  Change the call to {{{cherrypy.quickstart}}} to read:
+{{{
+#!python
+cherrypy.quickstart(HelloWorld(), '/myapp', appconf)
+}}}
+
+That configures our application to be mounted at a path of {{{/myapp}}}. Save it as app2.py.
+
+=== Directory Structure ===
+We will use the following directory structure in this example:
+{{{
+/home/jdoe/www/
+/home/jdoe/www/app2.py
+/home/jdoe/www/htdocs/
+/home/jdoe/www/htdocs/myapp
+/home/jdoe/www/htdocs/myapp/static/
+/home/jdoe/www/htdocs/myapp/static/example.txt
+}}}
+
+=== Apache 2.0 Config Sample ===
+The following snippet from the Apache configuration file shows how to set this up:
+
+{{{
+<VirtualHost *>
+    ServerAdmin you@yoursite.com
+    ServerName www.yoursite.com
+    ProxyPreserveHost On
+
+    DocumentRoot /home/user/www/htdocs
+
+    # this prevents the follow path from being proxied
+    ProxyPass /app/static !
+
+    <Location /app>
+        Order allow,deny
+        allow from all
+        ProxyPass http://localhost:8087/app
+        ProxyPassReverse http://localhost:8087/app
+    </Location>
+</VirtualHost>
+
+}}}
+
+The !ProxyPass and !ProxyPassReverse directives make Apache pass any requests for URLs below /myapp onto the !CherryPy server.  Inside of a {{{<Location>}}} directive it is not necessary to specify the path again to the {{{ProxyPass*}}} directives - they get it from the {{{Location}}}.
+
+Once you have made the configuration changes to Apache, restart the server (usually {{{apache2ctl restart}}} or {{{apachectl restart}}}) and launch your !CherryPy application.      Your !CherryPy application should now respond to all requests at http://www.yoursite.com/app/ ''except'' http://www.yoursite.com/app/static - those requests will be handled by Apache and you will have the speed of Apache's static file handling at your disposal.
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+||   || replace this || with this ||
+||2.2||tools.proxy||filters.base_url_filter||
+||2.2||cherrypy.quickstart(app, path, conf)||cherrypy.tree.mount(app, path, conf)
+|| ||                                      ||cherrypy.server.start()||

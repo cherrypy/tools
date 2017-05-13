@@ -1,0 +1,22 @@
+Sometimes it may be useful to know how many sessions are active on your cherrypy server. For example you may wish to limit the number of simultaneous logins.
+
+To get the current number of sessions use
+{{{
+len(cherrypy.session.cache)
+}}}
+
+For example you might use
+{{{
+class website(object):
+    def login(self, user, pass):
+        if len(cherrypy.session.cache) > 42:
+            return "Sorry to many active users"
+        else:
+            # log in code
+}}}
+
+The count does not include a new session that was created during the current request.
+
+Note this may only work when using a RAM session.
+
+http://www.cherrypy.org/ticket/717 has a patch to cherrypy that allows use of len() on the session object.

@@ -1,0 +1,84 @@
+= Quixote _q_lookup emulation in !CherryPy 2.2 =
+
+Courtesy of cherrypy (at) wojas.vvtp.tudelft.nl
+
+{{{
+#!python
+def traverse(func):
+	"""
+	(Decorator)
+	Desperate attempt at implementing Quixote's _q_lookup functionality in CherryPy.
+	Using this decorator a default method can return an object to continue path traversal.
+	Makes REST style paths like /object/123/ and /object/123/edit possible without big
+	switch blocks in object's default method..
+	This decorator also exposes the page.
+	"""
+	def wrapper(self, *args, **kwargs):
+		import types
+		result = func(self, *args, **kwargs)
+		if isinstance(result, object) and not isinstance(result, (basestring, types.GeneratorType)):
+			# do _q_lookup style directory traversal
+			path = cherrypy.request.path
+			if len(args)==1:
+				# this is the end of the traversal
+				# make sure the path ends with a /
+				if not path.endswith('/'):
+					raise cherrypy.HTTPRedirect(path+'/')
+				# and then just call index
+				m = getattr(result, 'index', None)
+				if m and getattr(m, 'exposed', False):
+					return m(**kwargs)
+				else:
+					raise cherrypy.NotFound(cherrypy.request.path+'/'+args[0])
+			else:
+				# still some parts to handle
+				m = getattr(result, args[1], None)
+				if m and getattr(m, 'exposed', False):
+					if len(path)>1 and path.endswith('/'):
+						# make sure the path doesn't end with a /
+						raise cherrypy.HTTPRedirect(path[:-1])
+					return m(*args[2:], **kwargs)
+				else:
+					# call 'default' method if it exists
+					m = getattr(result, 'default', None)
+					if m and getattr(m, 'exposed', False):
+						return m(*args[1:], **kwargs)
+					else:
+						raise cherrypy.NotFound(cherrypy.request.path+'/'+args[1])
+		else:
+			# normal result, no traversal
+			return result
+
+	wrapper.exposed = True
+	return wrapper
+}}}
+
+Usage:
+
+{{{
+#!python
+class TraverseTest(object):
+
+	exposed = True
+	n = None
+
+	def __init__(self, n=42):
+		self.n = n
+
+	@expose
+	def show(self):
+		yield "Hello from show! %s" % self.n
+
+	@expose
+	def index(self):
+		yield "Hello from index! %s" % self.n
+
+	@traverse
+	def default(self, *args, **kwargs):
+		try:
+			i = int(args[0])
+		except ValueError:
+			return "'%s' is not an integer, won't traverse" % args[0]
+		else:
+			return TraverseTest(args[0])
+}}}

@@ -1,0 +1,14 @@
+[http://www.sqlalchemy.org SqlAlchemy] is a great database backend and ORM for Python applications.
+
+Sqlalchemy integration into Cherrypy, providing one transaction for each request, turns out not to be a trivial thing to implement. Subtle threading bugs could bite you. Best to use the following Tool and collaborate...
+
+See the code for [http://code.google.com/p/webpyte/source/browse/trunk/webpyte/sqlalchemy_tool.py sqlalchemy_tool.py]
+
+I am referring you to the Webpyte website because I am afraid this could still have a bug or two, so it will be easier for me to update there. If the code stays like revision 198 for a long time after May 2009, then it should be stable; then feel free to copy it here.
+
+This module does not require anything from Webpyte. Just Cherrypy 3.1.1 and Sqlalchemy 0.5.x.
+
+Documentation in the module docstring.
+
+---
+For another solution refer to [wiki:SQLA]

@@ -1,0 +1,45 @@
+== Sample Guestbook ==
+
+'''Hi there!''' This is a sample/simple guestbook I wrote to learn CherryPy's ropes. The guestbook has a silly name which shouldn't affect it's functionality ;-) Actually I used it like a sentinel to see if I was outputting UTF-8 encoded data (looks like it's working).
+
+Even though it's simple it requires:
+ * Python 2.4 (for the @cpg.expose decorator)
+ * CherryPy
+ * [http://cherrytemplate.python-hosting.com/ CherryTemplate]
+ * [http://www.postgresql.org/ PostgreSQL] (I'm using 8.01 but that shouldn't matter)... btw I'm a happy user of [http://www.sqlmanager.net/products/postgresql/manager/download EMS PostgreSQL Manager Lite]
+ * psycopg which you can find [http://www.stickpeople.com/projects/python/psycopg/ precompiled for Windows] or [http://initd.org/svn/initd/ in source here]
+
+=== PostgreSQL schema (because I hate examples that use XML!) ===
+{{{
+#!sql
+CREATE TABLE "public"."tblentry" (
+  "entryid" SERIAL, 
+  "entrytext" VARCHAR(1000) NOT NULL, 
+  "entryauthor" VARCHAR(50) NOT NULL, 
+  "entryemail" VARCHAR(255), 
+  "entrydate" TIMESTAMP WITHOUT TIME ZONE DEFAULT now(), 
+  "entryparentid" NUMERIC DEFAULT 0, 
+  CONSTRAINT "tblentry_pkey" PRIMARY KEY("entryid")
+) WITH OIDS;
+}}}
+
+Then download the zip below. The CSS is inside the icons directory because I was too lazy to create a separate directory for it and I was too lazy to test it with IE but it actually looks nice in Firefox... and you ARE using Firefox, right?!?
+
+The admin area of the guestbook is reachable at http://localhost:8080/Admin
+ * username: admin
+ * password: glenda
+
+
+That's all folks! Take care.
+
+[mailto:lbolognini@gmail.com Lorenzo]
+
+{{{
+#!html
+<div class="highlighted">
+}}}
+P.S Please note that if you download the tar.gz there is a mis-routing comment in the .py file which has been removed in the .zip version. You actually need to run it with a config file. Simple as that!
+{{{
+#!html
+</div>
+}}}

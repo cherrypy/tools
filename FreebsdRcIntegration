@@ -1,0 +1,89 @@
+= Integration with FreeBSD's rc.conf / rc.d system =
+
+This page describes how to start a cherrypy site using its built-in HTTP server and '''cherryd''' in such a way that it integrates nicely with FreeBSD's rc system.  FreeBSD uses a text file '''/etc/rc.conf''' in combination with a set of scripts in '''/usr/local/etc/rc.d''' to start local daemons.
+
+
+I set out to achieve the following:
+ * automatically start the site when the server boots
+ * being able to stop, start and restart the site
+ * no need to install a third-party web server like Apache
+ * compatible with FreeBSD's rc system and /var/run pidfiles
+ * uses '''cherryd''' for daemonization
+ * able to use standard port 80
+
+In the following example I have my site defined in '''chsite.py''' and '''chsite.conf''', which both reside in '''/www'''.
+
+First, make sure the cherryd script itself is executable. In a standard install of cherrypy under FreeBSD:
+
+{{{
+chmod a+x /usr/local/lib/python2.5/site-packages/cherrypy/cherryd
+}}}
+
+Include the following lines in /etc/rc.conf:
+
+{{{
+cherryd_enable="YES"
+cherryd_wwwdir="/www"
+cherryd_flags="-c chsite.conf -i chsite"
+}}}
+
+Put the following script as '''cherryd''' in '''/usr/local/etc/rc.d''', and don't forget to make it executable:
+
+{{{
+#!sh
+#!/bin/sh
+#
+# cherryd for FreeBSD 7.0 rc.d usage, by Michiel Overtoom, motoom@xs4all.nl
+# based on http://www.djangosnippets.org/snippets/1050/ by David Blewett
+#
+
+# PROVIDE: cherryd
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+
+# Add these lines to /etc/rc.conf:
+#
+#  cherryd_enable="YES"
+#  cherryd_wwwdir="/www" # where the site .py and .conf files are
+#  cherryd_flags="-c CONFIG -i IMPORTS"  # specify config file(s) and imports to use
+#
+# Make sure the cherryd script is chmodded as executable.
+#
+# Before playing interactively with this script and not having added the
+# config lines to rc.conf yet, you might want to do: setenv cherryd_enable YES
+
+. /etc/rc.subr
+
+# On FreeBSD 7, the default location for python is /usr/local/bin,
+# but during boot /usr/local/bin isn't in the PATH yet.
+# The cherryd script uses the following shebang line: #!/usr/bin/env python
+# to make that shebang work, we have to add /usr/local/bin to the PATH.
+PATH="$PATH:/usr/local/bin"
+
+name="cherryd"
+rcvar=`set_rcvar`
+pidfile="/var/run/${name}.pid"
+
+command_interpreter="python"
+command="/usr/local/lib/python2.5/site-packages/cherrypy/${name}"
+command_args="-d -p $pidfile ${cherryd_flags}"
+
+start_cmd="echo \"Starting ${name}.\"; cd ${cherryd_wwwdir}; ${command} ${command_args}"
+
+load_rc_config $name
+run_rc_command "$1"
+}}}
+
+
+After these changes, the site should start automatically when the machine is restarted. To stop, start, restart the site you'd use the commands:
+
+{{{
+# /usr/local/etc/rc.d/cherryd stop
+# /usr/local/etc/rc.d/cherryd start
+# /usr/local/etc/rc.d/cherryd restart
+}}}
+
+
+See also [wiki:daemonization].
+
+Written by Michiel Overtoom, december 2008, mailto:motoom@xs4all.nl

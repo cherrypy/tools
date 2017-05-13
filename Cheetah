@@ -1,0 +1,155 @@
+= How to use powerful Cheetah cache mechanism with CherryPy? =
+
+Cheetah Template uses quite powerful cache mechanism. I have just improved its features with 'varyBy' keyword argument that will allow a separate cache instances to be created for a variety of conditions, such as different query string parameters or browser types.
+
+Look at the example. First lets upgrade two functions from Compiler.py file (found in Lib/site-libs/Cheetah/src folder) to the following code:
+
+{{{
+#!python
+    def startCacheRegion(self, cacheInfo, lineCol):
+        """
+        Added params: varyBy, debug. 
+        Author: Jarosław Zabiełło (http://zabiello.com)
+        Version: 2004-11-28
+        """
+        ID = self.nextCacheID()
+        interval = cacheInfo.get('interval',None)
+        test = cacheInfo.get('test',None)
+        self.__CacheRegionVaryBy = cacheInfo.get('varyBy',repr(ID))
+        self.__CacheRegionDebug = cacheInfo.get('debug', False)
+        self._cacheRegionOpen = True    # attrib of current methodCompiler        
+        self.addChunk('## START CACHE REGION: at line, col ' + str(lineCol) + ' in the source.')
+        self.addChunk('RECACHE = True')
+        self.addChunk('import md5')
+        self.addChunk('self._varyByHash = md5.new(str(%s)).hexdigest()' % self.__CacheRegionVaryBy)
+        self.addChunk('if self._varyByHash not in self._cacheData:')
+        self.indent()
+        self.addChunk("self._cacheData[self._varyByHash] = {'output':None, 'refreshTime':None}")
+
+        if 'id' in cacheInfo:
+            self.addChunk("self._cacheIndex['%s']= self._varyByHash" % cacheInfo['id'])            
+
+        if not (interval or test):
+            self.addChunk('pass')
+        if interval:
+            setRefreshTime = "self._cacheData[self._varyByHash]['refreshTime'] = currentTime()  + %s"  % interval
+            self.addChunk(setRefreshTime)
+            self.dedent()
+            self.addChunk("elif currentTime() > self._cacheData[self._varyByHash]['refreshTime']:")
+            self.indent()
+            self.addChunk(setRefreshTime)
+            self.addMethDocString('This cache will be refreshed every %s seconds.'  % interval)
+        if test:
+            self.dedent()
+            self.addChunk('elif ' + test + ':')
+            self.indent()
+            self.addChunk('RECACHE = True') 
+        self.dedent()
+        self.addChunk('else:')
+        self.indent()
+        self.addChunk('RECACHE = False')
+        self.dedent()
+        self.addChunk('if RECACHE:')
+        self.indent()
+        self.addChunk('orig_trans = trans')
+        self.addChunk('trans = cacheCollector = DummyTransaction()')
+        self.addChunk('write = cacheCollector.response().write')
+        
+    def endCacheRegion(self):
+        self._cacheRegionOpen = False
+        self.addChunk('trans = orig_trans')
+
+        self.addChunk('write = trans.response().write')
+        self.addChunk("self._cacheData[self._varyByHash]['output'] = cacheCollector.response().getvalue()")
+        self.addChunk('del cacheCollector')
+        self.dedent()
+        self.addWriteChunk("self._cacheData[self._varyByHash]['output']")
+        if self.__CacheRegionDebug:
+            self.addWriteChunk("'<hr />%s' % self._cacheData")
+        self.addChunk('## END CACHE REGION')
+        self.addChunk('')
+}}}
+
+OK. Now, let's check how it works. First, create the following test files.
+
+File: !TestTemplate.html
+
+{{{
+#!python
+#import cherrypy
+#import time
+
+Hello $username!
+
+#set $_varyBy=$cherrypy.request.params.get('x')
+#set $_test=$cherrypy.request.params.get('refresh')
+
+#cache id='test', test=$_test, timer='10s', varyBy=$_varyBy, debug=True
+$time.strftime('%H:%M:%S', time.localtime())
+#end cache
+}}}
+
+File: Test.py
+{{{
+#!python
+from Cheetah.Template import Template
+import cherrypy
+
+#import compiled TestTemplate:
+from TestTemplate import TestTemplate
+
+class TestCheetah(object):
+
+   def __init__(self):
+      """
+      For threadPool=1 or for forks mode you can define instance 
+      of Cheetah here, in constructor. 
+      For threadPool > 1 it should be defined in engine.on_start_thread
+      method because it have to be executed only ONCE and you must aware
+      of threads conflict. on_start_thread is a good place. If you create
+      instance of TestTemplate in the place where it will be executed
+      for every browser request, Cheetah cache wil NOT work!
+      """
+      self._tmpl = TestTemplate()
+      self._tmpl.username = "John Brown"      
+
+   def index(self, **kwargs):
+      return self._tmpl.respond()
+   index.exposed = True
+
+cherrypy.quickstart(TestCheetah(), conf='test.conf')
+}}}
+
+File test.conf:
+{{{
+[/]
+server.socket_port = 8080
+server.thread_pool = 1
+}}}
+
+Of course, !TestTemplate.html should be compiled first. You can do do it and execute !CherryPy with the following script:
+{{{
+python cheetah-compile.py TestTemplate.html --iext html
+python Test.py
+}}}
+
+Execute, check results and have a fun! :)
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+||   || replace this || with this ||
+||2.2||cherrypy.quickstart(TestCheetah(), conf='test.conf')||cherrypy.config.update(configFile = 'test.conf')[[br]]cherrypy.tree.mount(TestCheetah())[[br]]cpg.server.start()||
+||2.1||on_start_thread_list||onStartThreadList||
+||2.0||onStartThreadList||_cpInitThread()||
+||   ||import cherrypy||from cherrypy import cpg as cherrypy||
+||   ||cherrypy.quickstart(TestCheetah(), conf='test.conf')||cpg.root = TestCheetah()[[br]]cpg.server.start(configFile = 'test.conf')||
+
+test.conf for 2.0:
+{{{
+[server]
+socketPort = 8080
+threadPool = 1
+}}}

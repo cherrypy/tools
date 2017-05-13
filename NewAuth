@@ -1,0 +1,130 @@
+It's a lot less complex than Carlos's AuthenticationFramework, and is a lot like CSAuthenticate while providing more flexibility.
+
+{{{
+#!python
+from cherrypy.lib import aspect, httptools
+from cherrypy import cpg
+
+class NewAuth(aspect.Aspect):
+    """
+    NewAuth is a more powerful authentication system for CherryPy which borrows from CSAuthenticate.
+    You'll probably want to override loginScreen, logoutScreen, loggedInScreen, and checkCredentials.
+
+    NewAuth is based on a system of roles. When a user logs in, they are assigned a list of roles they
+    belong to based on the credentials they give. Every object and method may have a roles attribute
+    which is a list of roles which are allowed to access a given resource.
+
+    The default implementation uses ugly forms which have customizable messages. It checks username
+    and password credentials via the loginMap dictionary, and if they match, assigns the user two roles:
+    "loggedIn" and their username.
+    """
+    # all of these variables are for basic functionality which you should really override.
+    permissionMessage = "You do not have permission to access this page."
+    badCredentialsMessage = "Your credentials were invalid."
+    loggedInMessage = "You are now logged in."
+    loggedOutMessage = "You are now logged out."
+    loginMap = {"login":"password"}
+    def _before(self, methodName, method):
+        if not getattr(method, 'exposed', None):
+            return aspect.CONTINUE, None
+        if methodName in ["doLogin", "logout", "login"]:
+            return aspect.CONTINUE, None
+        userRoles = self.getUserRoles()
+        if hasattr(self, "roles"):
+            # first, check to see if he's got the controller credentials
+            requiredRoles = getattr(self, "roles")
+            ok = False
+            for role in userRoles:
+                if role in requiredRoles:
+                    ok = True
+                    break
+            if not ok:
+                return aspect.STOP, self.loginScreen(cpg.request.browserUrl, self.permissionMessage)
+        if hasattr(method, "roles"):
+            # now, check method credentials
+            requiredRoles = getattr(method, "roles")
+            ok = False
+            for role in userRoles:
+                if role in requiredRoles:
+                    ok = True
+                    break
+            if not ok:
+                return aspect.STOP, self.loginScreen(cpg.request.browserUrl, self.permissionMessage)
+        return aspect.CONTINUE, None
+    def getUserRoles(self):
+        return cpg.request.sessionMap.get("roles",[])
+    def loginScreen(self, fromPage="loggedIn", message=""):
+        """
+        Override me. You *must* pass the fromPage variable on to doLogin, but
+        other than that you're free to choose what your form variable names are
+        (if you've overloaded checkCredentials). Don't change the arguments.
+        """
+        return """
+        <html><body>
+            <form method="post" action="doLogin">
+                %s<br />
+                Login: <input type="text" name="login" size="10" /><br />
+                Password: <input type="password" name="password" size="10" /><br />
+                <input type="hidden" name="fromPage" value="%s" /><br />
+                <input type="submit" value="Login" />
+            </form>
+        </body></html>
+        """ % (message, fromPage)
+    def login(self):
+        return self.loginScreen()
+    login.exposed = True
+    def loggedInScreen(self):
+        """
+        This is the default page you see if you've logged in. Feel free
+        to override it.
+        """
+        return """
+        <html><body>%s</body></html>""" % self.loggedInMessage
+    def loggedIn(self):
+        return self.loggedInScreen()
+    loggedIn.exposed = True
+    def doLogin(self, fromPage, **kwargs):
+        roles = self.checkCredentials(**kwargs)
+        if len(roles) == 0:
+            return self.loginScreen(fromPage, self.badCredentialsMessage)
+        else:
+            cpg.request.sessionMap["roles"] = roles
+            httptools.redirect(fromPage)
+            return ""
+    doLogin.exposed = True
+    def logout(self):
+        cpg.request.sessionMap["roles"] = []
+        return self.logoutScreen()
+    logout.exposed = True
+    def logoutScreen(self):
+        """
+        Override me to provide the screen which displays the logged out message.
+        """
+        return """
+        <html><body>%s</body></html>""" % self.loggedOutMessage
+    def checkCredentials(self, login, password):
+        """
+        Override me. Return a list of roles the user is now in. Return a list of length 0
+        if the user's credentials were invalid. This is passed the keyword args from doLogin, so you
+        can actually validate on any credentials you desire.
+        """
+        desiredPassword = self.loginMap.get(login, False)
+        if desiredPassword and desiredPassword == password:
+            return ["loggedIn", login]
+        else:
+            return []
+
+if __name__ == "__main__":
+    class Test(NewAuth):
+        roles = ["loggedIn"] # every exposed method in this object requires login
+        loginMap = {"login":"password","admin":"admin"}
+        def index(self):
+            return "index is protected by loggedIn"
+        index.exposed = True
+        def admin(self):
+            return "this can only be accessed by admin"
+        admin.exposed = True
+        admin.roles = ["admin"] # requires loggedIn _and_ admin
+    cpg.root = Test()
+    cpg.server.start(configDict={"port":8080,"sessionStorageType":"ram"})
+}}}

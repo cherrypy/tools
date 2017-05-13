@@ -1,0 +1,78 @@
+= JSON =
+
+Here is a tool that jsonifies the controller output. Note that you need to use CherryPy 3.0.1 or later to use tool decorators with !RoutesDispatcher:
+
+{{{
+#!python
+from simplejson import JSONEncoder
+encoder = JSONEncoder()
+
+def jsonify_tool_callback(*args, **kwargs):
+    response = cherrypy.response
+    response.headers['Content-Type'] = 'application/json'
+    response.body = encoder.iterencode(response.body)
+
+cherrypy.tools.jsonify = cherrypy.Tool('before_finalize', jsonify_tool_callback, priority=30) 
+}}}
+
+The iterencode function of the [http://cheeseshop.python.org/pypi/simplejson simplejson] JSONEncoder returns a generator that jsonifies the result incrementally (for example if you're jsonifying a large list you start getting json outputs for the first objects right away).
+
+I usually use this by setting _cp_config on a controller class or as a decorator on the method:
+
+{{{
+#!python
+from cherrypy import tools
+
+class Root(object):
+    @tools.jsonify()
+    def getrange(self, limit=4):
+        return range(limit)
+}}}
+
+''-- Arnar Birgisson''
+
+There are some issues with this approach, namely that your page handler must return an iterable or cherrypy.response.body will try to turn it into an iterable for you. A true decorator, or a tool that wrapped the page handler, would be slightly less fragile.
+
+''-- Robert Brewer''
+
+The complete example is:
+{{{
+#!python
+from simplejson import JSONEncoder
+import cherrypy
+
+encoder = JSONEncoder()
+
+def jsonify_tool_callback(*args, **kwargs):
+    response = cherrypy.response
+    response.headers['Content-Type'] = 'application/json'
+    response.body = encoder.iterencode(response.body)
+
+cherrypy.tools.jsonify = cherrypy.Tool('before_finalize', jsonify_tool_callback, priority=30)
+
+class Root(object):
+    @cherrypy.tools.jsonify()
+    def getrange(self, limit=4):
+        return range(int(limit))
+    getrange.exposed = True
+
+cherrypy.quickstart(Root())
+}}}
+Note that you need to cast the limit argument (!), expose the method and start the server. You can try this example with `curl 127.0.0.1:8080/getrange?limit=10`
+
+''-- Ilja Heitlager''
+
+As of CherryPy 3.2.0 you can do it like this:
+{{{
+#!python
+
+import cherrypy
+
+class Root(object):
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    def getrange(self, limit=4):
+        return list(range(int(limit)))
+
+cherrypy.quickstart(Root())
+}}}

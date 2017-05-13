@@ -1,0 +1,26 @@
+= Email On Error =
+
+Sometimes it can be useful to have CherryPy email you when something has gone terribly wrong.
+In this case, we want to send an email with a full traceback and headers when an unhandled exception is raised.
+
+{{{
+import logging
+def my_log_traceback(severity=logging.CRITICAL):
+    """Write the last error's headers and traceback to the cherrypy error log witih a CRITICAL severity."""
+    from cherrypy import _cperror
+    h = ["  %s: %s" % (k, v) for k, v in cherrypy.request.header_list]
+    cherrypy.log('\nRequest Headers:\n' + '\n'.join(h) + '\n\n' + _cperror.format_exc(), "HTTP", severity=severity)
+
+cherrypy.tools.my_log_tracebacks = cherrypy.Tool('before_error_response', my_log_traceback)
+
+# set up an SMTP handler to mail when the CRITICAL error occurs
+from logging import handlers
+h = handlers.SMTPHandler('localhost', 'from@localhost', 'to@localhost', 'CherryPy Error')
+h.setLevel(logging.CRITICAL)
+cherrypy.log.error_log.addHandler(h)
+}}}
+
+You probably also want to configure CherryPy to not show the user the traceback:
+{{{
+'request.show_tracebacks' : False
+}}}

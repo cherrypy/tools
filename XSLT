@@ -1,0 +1,10 @@
+= Use XSLT with !CherryPy =
+
+== !CherryPy 3 ==
+
+Refer to [wiki:Publisher] for an XSLT solution.
+
+== !CherryPy 2 ==
+
+ * Use the {{{picket}}} package for a dedicated filter: http://trac.defuze.org/wiki/Picket
+ * Use the {{{buffet}}} package for a template engine neutral approach: http://projects.dowski.com/projects/buffet

@@ -1,0 +1,45 @@
+Here's a simple Tool for Cheetah templating:
+
+{{{
+import cherrypy as cp
+
+class CheetahHandler(cp.dispatch.LateParamPageHandler):
+    def __init__(self, template, next_handler):
+        self.template = template
+        self.next_handler = next_handler
+    
+    def __call__(self):
+        env = globals().copy()
+        env.update(self.next_handler())
+        tmpl = getattr(__import__(self.template, globals(), locals(), [self.template], -1), self.template)
+        return str(tmpl(searchList=[env]))
+
+class CheetahLoader(object):
+    def __call__(self, template):
+        cp.request.handler = CheetahHandler(template, cp.request.handler)
+
+main = CheetahLoader()
+cp.tools.cheetah = cp.Tool('on_start_resource', main)
+}}}
+
+Use it like this:
+
+{{{
+class Test_Cheetah_Tool(object):
+    @cp.expose
+    @cp.tools.cheetah(template='Greetings')
+    def index(self, username=None, **kwargs):
+        return {'username': username}
+}}}
+
+Greetings.tmpl:
+
+{{{
+Hello, $username!
+}}}
+
+Compile with:
+
+{{{
+cheetah compile Greetings.tmpl
+}}}

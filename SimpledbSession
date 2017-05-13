@@ -1,0 +1,179 @@
+This allows you to use Amazon's SimpleDB as a backend for cherrypy sessions. It's not totally complete but it works for me (short example usage given below). It doesn't pass the unit tests, but I might need help figuring that out.
+
+requires boto, you can do 
+
+{{{
+easy_install boto
+}}}
+ 
+or get it from google code: http://code.google.com/p/boto/
+
+make a file called simpledb.py
+{{{
+import datetime
+import cherrypy
+from cherrypy.lib.sessions import Session
+import boto
+
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+import unicodedata
+
+class SimpledbSession(Session):
+    """ Implementation of the Amazon SimpleDB backend for sessions. It assumes
+        a table like this:
+
+            domain = sdb.get_domain('session')
+            item = domain.get_item(id)
+            item['data']
+            item['expiration_time']
+    
+        use 'access_key' = 'your access key'
+        and 'secret_access_key' = 'your secret access key'
+        in your configuration
+    """
+    pickle_protocol = pickle.HIGHEST_PROTOCOL
+    
+    def __init__(self, id=None, **kwargs):
+        Session.__init__(self, id, **kwargs)
+        self.domain.new_item(self.id)
+
+
+    def setup(cls, **kwargs):
+        for k, v in kwargs.iteritems():
+            setattr(cls, k, v)
+        
+        sdb = boto.connect_sdb(cls.access_key, cls.secret_access_key)
+        domain = sdb.get_domain('session')
+        cls.domain = domain
+    setup = classmethod(setup)
+    
+    def __del__(self):
+        pass
+    
+    def _exists(self):
+        item = self.domain.get_item(self.id)
+        return bool(item)
+    
+    def _load(self):
+        item = self.domain.get_item(self.id)
+        if not item:
+            return None
+        
+        try: 
+            pickled_data = item['data'].decode('string_escape')
+            data = pickle.loads(pickled_data)
+        except:
+            data = {}
+
+        expiration_time = self.time_from_string(item['expiration_time']) 
+        return data, expiration_time
+
+    def time_from_string(self, s):
+        d = s.split('.')
+        x = datetime.datetime.strptime(d[0], "%Y-%m-%d %H:%M:%S")
+        fractional = d[1]
+        if fractional is None:
+            fractional = '0'
+        fracpower = 6 - len(fractional)
+        fractional = float(fractional) * (10 ** fracpower)
+        x.replace(microsecond=int(fractional))
+        expiration_time = x
+        return expiration_time
+
+    
+    def _save(self, expiration_time):
+        item = self.domain.get_item(self.id)
+        if not item:
+            item = self.domain.new_item(self.id)
+        item['expiration_time'] = expiration_time
+        pickled_data = pickle.dumps(self._data, self.pickle_protocol)
+        item['data'] = pickled_data.encode('string_escape')
+
+    def _delete(self):
+        item = self.domain.get_item(self.id)
+        self.get_domain().delete_item(item)
+
+    def acquire_lock(self):
+        """(don't really) Acquire an exclusive lock on the currently-loaded session data."""
+        self.locked = True
+    
+    def release_lock(self):
+        """(don't really) Release the lock on the currently-loaded session data."""
+        self.locked = False
+    
+    def clean_up(self):
+        """Clean up expired sessions."""
+        for item in self.domain:
+            if self.time_from_string(item['expiration_time']) < datetime.datetime.now():
+                self.domain.delete_item(item)
+
+}}}
+
+
+You can try this self contained example: (make sure to put in your AWS credentials)
+sdbexample.py
+{{{
+import cherrypy
+from cherrypy import _cperror
+
+def handle_error():
+    cherrypy.response.status = 500
+    cherrypy.response.body = ["<html><body>Sorry, an error occured<br>%s</body></html>" % _cperror.format_exc()]
+
+import simpledb
+cherrypy.lib.sessions.SimpledbSession = simpledb.SimpledbSession
+
+cherrypy.config.update({
+                        #'server.socket_host': '0.0.0.0', #if you are running this on ec2, uncomment
+                        #'server.socket_port': 8080,      #so you can access by host address
+                        'request.error_response': handle_error,
+                        'tools.sessions.on': True,
+                        'tools.sessions.storage_type': "simpledb",
+                        'tools.sessions.timeout': 60,
+                        'tools.sessions.access_key':"your access key", 
+                        'tools.sessions.secret_access_key':"your secret access key",
+                        })
+
+class SimpledbExample(object):
+    def __init__(self):
+        pass
+
+    def index(self):
+        return "index"
+    index.exposed = True
+
+    def report(self):
+        counter = cherrypy.session['counter']
+        return "count: %d" % counter
+    report.exposed = True
+
+    def add(self):
+        counter = cherrypy.session.get('counter', 0) + 1
+        cherrypy.session['counter'] = counter
+        return "added count: %d" % counter
+    add.exposed = True
+    
+cherrypy.quickstart(SimpledbExample())
+        
+}}}
+
+run it with
+
+{{{
+python sdbexample.py
+}}}
+
+
+you can test like:
+
+
+http://127.0.0.1/add
+
+
+http://127.0.0.1/report
+and so on
+
+If you need help or want to help contact ian@cloudcarpenters.com

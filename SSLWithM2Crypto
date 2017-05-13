@@ -1,0 +1,34 @@
+= SslCherry =
+
+SslCherry is a simple one-page python file that integrates the python package [http://chandlerproject.org/Projects/MeTooCrypto M2Crypto] with CherryPy to provide HTTPS support.
+
+== Usage ==
+
+{{{
+from cherrypy import cpg
+import sslcherry
+
+...
+
+cpg.root = Root()
+sslcherry.start(configFile='foo.conf')
+}}}
+
+Your config file should contain something like this:
+
+{{{
+[server]
+sslKeyFile=foo.pem
+}}}
+
+Where "foo.pem" is a file containing your private key and certificate, in the same format that apache uses.
+
+== Security ==
+
+Although the original author of M2Crypto was unsure of its security, M2Crypto has been developed heavily from those days and is in production use. As usual, use at your own risk.
+
+== Bugs ==
+
+ * The URLs given in cpg.request.base and cpg.request.browserUrl still start with "http://" instead of the correct "https://".
+ * Unix domain sockets are not supported.
+ * SSL error handling is not done well.

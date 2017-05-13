@@ -1,0 +1,84 @@
+CherryPy's default dispatcher is a very powerful and intuitive system for most applications. This is especially true for "RESTful" apps (where by "RESTful" people mean "cool" URI's like `/thing/12/bit/84`) because the hierarchy of containers in the URI is mirrored in the tree of page handlers. That is, it's natural to map the URI `/thing/12/bit/84` to an object reference like `Thing.12.bit.84` or even `Thing[12].bit[84]`.
+
+Now, Python doesn't naturally allow attribute names that are digits, like `12`. It does, however, allow them via the "magic method" called `__getattr__`. We can use this to our advantage when constructing an object tree for these kinds of URI's. Here's an example application which handles the URI `/thing/12/bit/84`. It also handles the intermediate URI's `/thing`, `/thing/12`, `/thing/new`, and `/thing/12/bit`, by the way:
+
+
+{{{
+#!python
+import cherrypy
+from myapp import bits
+
+
+class Root:
+    
+    @cherrypy.expose
+    def index(self):
+        return "Things galore!"
+    
+    @cherrypy.expose
+    def new(self):
+        if cherrypy.request.method != 'POST':
+            cherrypy.response.headers['Allow'] = 'POST'
+            raise cherrypy.HTTPError(405)
+        
+        thing = Thing()
+        raise cherrypy.HTTPRedirect('/%d' % thing.id)
+    
+    @cherrypy.expose
+    def default(self, thingid):
+        if not thingid.isdigit():
+            raise cherrypy.NotFound()
+        
+        thing = Thing(id=int(thingid))
+        if thing is None:
+            raise cherrypy.NotFound()
+        
+        return thing.html()
+    default.bit = bits.Bits()
+    
+    def __getattr__(self, name):
+        if name.isdigit():
+            cherrypy.request.params['thingid'] = name
+            return self.default
+        raise AttributeError("%r object has no attribute %r" % (self.__class__.__name__, name))
+
+root = Root()
+
+if __name__ == '__main__':
+    cherrypy.quickstart(root, '/thing')
+}}}
+
+The only portion worth discussing in the above is the `__getattr__` method; it is called while the dispatcher is traversing the URI from left to right. At the point when the dispatcher tries to find a candidate for `/thing/12`, it calls `getattr(root, '12', None)`. Our `__getattr__` method above answers the call, and returns `self.default`. It must return this function so that a request for `/thing/12` is handled by the default method. If we didn't include the `__getattr__` method, CherryPy would pass the path segment `12` as a "virtual path" positional argument. Because we're returning `default` ourselves manually, we have to capture that argument and pass it as a "param" keyword arg instead.
+
+But we've done one more bit of trickery here: we've set `default.bit = bits.Bits()`. By doing this, a request for `/thing/12/bit/...` will continue traversal into the `Bits` class.
+
+Here is the 'Bits' module which the above imports:
+
+{{{
+#!python
+import cherrypy
+
+class Bits:
+    
+    @cherrypy.expose
+    def index(self, thingid=None):
+        return "Bits galore!"
+    
+    @cherrypy.expose
+    def default(self, bitid, thingid=None):
+        thing = Thing.get(id=int(thingid))
+        if thing is None:
+            raise cherrypy.NotFound()
+        
+        bit = Thing.bits.get(id=int(bitid))
+        if bit is None:
+            raise cherrypy.NotFound()
+        
+        return bit.html()
+}}}
+
+There's nothing special about the `Bits` class; it's a normal CherryPy handler class. The only thing we have to be careful about is the order of arguments to the default method. Remember that we captured the `thingid` argument and stuck it in `request.params`, so it's not going to be passed as a positional argument as you might expect. The `bitid` argument will be passed positionally, however, because the `Bits` class has no such `__getattr__` method. Therefore, it must come first, and the `thingid` argument must come last.
+
+In this example, we've limited ourselves to numeric "dynamic path segments", because they're easiest to explain. You can also handle non-numeric bytes, but it's a bit trickier since those might collide with normal attributes on the class. One way to differentiate them would be to perform the database lookup inside the `__getattr__` method instead of the subsequent methods. You could even pass a fully-resolved database object to your page handlers this way, instead of just the id.
+
+Regardless of whether you handle non-numeric atoms or not, be aware that the `__getattr__` method might be called in some situations other than the traversal performed by the dispatcher. That's why, for example, we took pains to write `self.__class__.__name__` instead of just `repr(self)` in that method: if `self` has no `__repr__` method, you'd enter an infinite loop! Make sure you raise `AttributeError` if you don't want to handle the name as a valid URI path segment.

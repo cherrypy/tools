@@ -1,0 +1,52 @@
+= About Genshi =
+
+According to Genshi's official home page, it is a: "Python toolkit for stream-based generation of output for the web".  More simply put, Genshi is an XML templating engine inspired by [http://kid-templating.org/ Kid].
+
+Genshi provides an [http://genshi.edgewall.org/browser/trunk/examples/cherrypy example for using Genshi with CherryPy 3.0], and a very nice [http://genshi.edgewall.org/wiki/GenshiTutorial tutorial] now.
+
+== Using CherryPy v.2.2.1 with Genshi v.0.3.1 ==
+
+index.py
+
+{{{
+#!python
+import os 
+import sys 
+from genshi.template import TemplateLoader 
+import cherrypy 
+
+
+class Guestbook:
+    
+    def index(self):
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        loader = TemplateLoader([base_path])
+        tmpl = loader.load('index.html')
+        stream = tmpl.generate()
+        return stream.render('xhtml')
+    index.exposed = True
+
+cherrypy.root = Guestbook() 
+cherrypy.config.update({'sessionFilter.on': True}) 
+
+
+if __name__ == '__main__':
+    cherrypy.config.update(file="config.txt")
+    cherrypy.server.start()
+}}}
+
+
+index.html
+{{{
+<!DOCTYPE html 
+    PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" 
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"> 
+<html xmlns="http://www.w3.org/1999/xhtml" 
+      xmlns:py="http://genshi.edgewall.org/" 
+      xmlns:xi="http://www.w3.org/2001/XInclude" 
+      lang="en"> 
+ <body> 
+  <span class="greeting">Hello Silicon</span> 
+ </body> 
+</html> 
+}}}

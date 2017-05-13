@@ -1,0 +1,87 @@
+= How to do Virtual Hosting =
+
+CherryPy has a built-in dispatcher for supporting
+Virtual Hosts.
+See:
+ * http://groups.google.com/group/cherrypy-users/browse_thread/thread/f393540fe278e54d
+ * http://www.cherrypy.org/changeset/1655
+
+Put simply this means you can develop an application
+that can serve different parts of itself for different
+virtual hosts. For example, say you have an application
+mounted at '''/''' on http://domain.com/ you could map:
+ * http://foo.domain.com/ -> /foo
+ * http://bar.domain.com/ -> /bar
+
+== Example ==
+This example assumes you have CherryPy 3.x installed.
+
+=== vhosts.py ===
+{{{
+#!python
+#!/usr/bin/env python
+
+# To run this example:
+#
+#  first, put these dummy domain names in your /etc/hosts:
+#  127.0.0.1 domain.com
+#  127.0.0.1 foo.domain.com
+#  127.0.0.1 bar.domain.com
+#
+# Now start the example:
+# 
+#   $ python vhosts.py
+#
+# Then check it:
+#
+# point a webbrowser to http://domain.com:8000
+# point a webbrowser to http://foo.domain.com:8000
+# point a webbrowser to http://bar.domain.com:8000
+#
+
+import cherrypy
+from cherrypy import expose
+
+class Root(object):
+
+    @expose
+    def index(self):
+        return "I am the main vhost"
+
+class Foo(object):
+
+    @expose
+    def index(self):
+        return "I am foo."
+
+class Bar(object):
+
+    @expose
+    def index(self):
+        return "I am bar."
+
+def main():
+    cherrypy.config.update({"server.socket_port": 8000})
+
+    conf = {
+            "/": {
+                "request.dispatch": cherrypy.dispatch.VirtualHost(
+                    **{
+                        "foo.domain.com:8000": "/foo",
+                        "bar.domain.com:8000": "/bar"
+                        }
+                    )
+                }
+            }
+
+    root = Root()
+    root.foo = Foo()
+    root.bar = Bar()
+    cherrypy.tree.mount(root, "/", conf)
+    cherrypy.engine.start()
+    cherrypy.engine.block()
+    
+if __name__ == "__main__":
+    main()
+}}}
+----

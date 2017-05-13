@@ -1,0 +1,145 @@
+'''Why use jsolait with CherryPy'''
+
+JSolait can make it easier to write web pages. It does this by translating data types back and forth between python on the server and javascript on the client. For example, python dictionaries become javascript 'associative arrays'. Javascript associative arrays become python dictionaries. Python lists and javscript arrays are interchangable. So are Python objects and javascript objects to some degree.
+
+'''How to use jsolait with CherryPy'''
+
+ * Learn the basics of [http://www.xmlrpc.com/spec XMLRPC]. Not every python type will automatically work properly.
+ * Install jsolait from http://www.jsolait.net.
+ * Tell CherryPy where to find the jsolait files. This is done via StaticContent. See the examples below. 
+
+'''Example 1'''
+
+This uses jsolait1.0. A webpage retreives two objects from the server; the objects are inside of an array.
+
+Here is the file layout: 
+{{{
+blorg/test.py
+blorg/index.html
+blorg/jsolait/init.js
+blorg/jsolait/lib/xmlrpc.js
+etc etc etc the rest of the jsolait files. 
+}}}
+ 
+Here are the contents of 'index.html':
+{{{
+#!python
+<html>
+<head>
+    <script type="text/javascript" src="./jsolait/init.js"></script>
+    <script type="text/javascript" src="./jsolait/lib/urllib.js"></script>
+    <script type="text/javascript" src="./jsolait/lib/xml.js"></script>
+    <script type="text/javascript" src="./jsolait/lib/xmlrpc.js"></script>
+</head>
+<body>
+
+<script language="javascript">
+
+var xmlrpc = importModule("xmlrpc");
+var url="http://localhost:8080";
+var methods=["testRPC"];
+try {
+    var service = new xmlrpc.ServiceProxy(url,methods);
+    response=service.testRPC();
+    document.write('first obj name: ' + response[0].name + '<br>');
+    document.write('first obj number: ' + response[0].number + '<br>');
+    document.write('second obj name: ' + response[1].name + '<br>');
+    document.write('second obj number: ' + response[1].number + '<br>');
+} catch(e) {
+    document.write(e.message);
+}
+</script>
+</body>
+</html>
+}}}
+
+Here is test.py:
+
+{{{
+#!python
+
+import cherrypy
+
+class TestClass:
+    def __init__(self, name='', number=''):
+        self.name = name
+        self.number = number
+
+class Root:
+    _cp_config = {'tools.xmlrpc.on': True}
+
+    jsolait = tools.staticfile.handler(section='/', file='jsolait')
+
+    def index(self):
+        return open('index.html').read()
+    index.exposed = True
+    
+    def testRPC(self):
+        test2 = TestClass('hi', '5')
+        test3 = TestClass('hi2', '52')
+        return [test2, test3]
+    testRPC.exposed = True
+
+cherrypy.quickstart(Root())
+}}}
+
+Run test.py. Open a browser to 'http://localhost:8080'. You should get this:
+
+{{{
+first obj name: hi
+first obj number: 5
+second obj name: hi2
+second obj number: 52
+}}}
+
+'''Example 2'''
+
+This is similar to the first example except for one thing. The two objects are contained in a python dictionary instead of an array. The python dictionary gets transformed into a javascript associative array by jsolait. 
+
+Here is the modification to index.html: 
+
+{{{
+#!python
+try {
+    var service = new xmlrpc.ServiceProxy(url,methods);
+    response=service.testRPC();
+    document.write('obja.name: ' + response.obja.name + '<br>');
+    document.write('obja.number: ' + response.obja.number + '<br>');
+    document.write('objb.name: ' + response.objb.name + '<br>');
+    document.write('objb.number: ' + response.objb.number + '<br>');
+} catch(e) {
+    document.write(e.message);
+}
+}}}
+
+Here is the new testRPC method for test.py:
+
+{{{
+#!python
+
+    def testRPC(self):
+        test2 = TestClass('hi', '5')
+        test3 = TestClass('hi2', '52')
+        return {'obja': test2, 'objb': test3}
+    testRPC.exposed = True
+}}}
+
+If you edit index.html and test.py with these changes, then stop and restart test.py, and then open up your browser and again type http://localhost:8080, you should get the following: 
+
+{{{
+obja.name: hi
+obja.number: 5
+objb.name: hi2
+objb.number: 52
+}}}
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+||   || replace this || with this ||
+||2.2||tools.xmlrpc||xmlrpc_filter||
+||2.1||xmlrpc_filter||xmlRpcFilter||
+
+See StaticContent for additional compatibility info.

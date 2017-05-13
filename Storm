@@ -1,0 +1,106 @@
+Storm is the ORM from Canonical (makers of Ubuntu.) Here is the simple implementation I have that utilizes CP 3.1 (Currently Beta) and Storms current trunk release (.11 i believe it is).
+
+Modifications:
+
+ * 2009-05-20: Nando Florestan corrected to_skip exceptions.
+ * 2007-11-20: Updated connect_db, and disconnect_db methods to remove stores when thread has died.
+
+For my connection setup, here is the code.
+{{{
+storm_stores = {}
+
+def connect_db(thread_index):
+	global storm_stores
+	database = create_database(cherrypy.config.get('storm.default.url'))
+	local_store		= Store(database)
+	storm_stores[thread_index] = local_store
+	cherrypy.thread_data.store = local_store
+	
+def disconnect_db(thread_index):
+	global storm_stores
+	s = storm_stores.pop(thread_index, None)
+	if s is not None:
+		cherrypy.log("Cleaning up store.", "STORM")
+		s.close()
+	else:
+		cherrypy.log("Could not find store.", "STORM")
+
+	
+cherrypy.engine.subscribe('start_thread', connect_db)
+cherrypy.engine.subscribe('stop_thread', disconnect_db)
+}}}
+
+In your config file you will want:
+{{{
+storm.default.url = "postgres://postgres:pass@server:5432/database"
+}}}
+
+Here is a sample method that uses genshi, storm etc:
+{{{
+@cherrypy.expose
+@template.output('index.html')
+def index(self, site_id=1):
+    site = cherrypy.thread_data.store.find(Site, Site.site_id == 1).one()
+    cherrypy.thread_data.store.commit() # necessary unless you use the tool provided below.
+    return template.render(site=site)
+}}}
+
+Instead of doing a commit on every query in every action you can allow the request handler to do the commit for you. This is very similar to the [http://tools.cherrypy.org/wiki/Dejavu Dejavu] example shown in the tools section as well. This basically attempts to do a commit and if it doesn't commit it does a rollback and spits out an error.
+
+{{{
+## The database commit tool. This will try to auto-commit on each request.
+def do_commit():
+	try:
+		if not cherrypy.request.rolledback:
+			cherrypy.thread_data.store.commit()
+	except:
+		cherrypy.thread_data.store.rollback()
+		cherrypy.log("ROLLBACK - " + format_exc(), "STORM")
+		
+
+def try_commit():
+	if cherrypy.response.stream:
+		cherrypy.request.hooks.attach('on_end_request', do_commit)
+	else:
+		if isinstance(cherrypy.response.body, types.GeneratorType):
+			cherrypy.response.collapse_body()
+		do_commit()
+
+class StormHandlerWrapper(object):
+	# to_skip = (KeyboardInterrupt, SystemExit, cherrypy.HTTPRedirect)
+	# Nando Florestan does not think the above line is correct,
+	# because transactions should never be interrupted in the middle:
+	to_skip = [cherrypy.HTTPRedirect]
+	
+	def __init__(self):
+		self.nexthandler = cherrypy.request.handler
+		cherrypy.request.handler = self
+
+	def __call__(self, *args, **kwargs):
+		try:
+			cherrypy.request.rolledback = False
+			result = self.nexthandler(*args, **kwargs)		
+		except Exception, e:
+			if not isinstance(e, self.to_skip):
+				cherrypy.log("ROLLBACK - " + format_exc(), "STORM")
+				cherrypy.thread_data.store.rollback()
+				cherrypy.request.rolledback = True
+			raise
+		return result
+
+class StormTool(cherrypy.Tool)	:
+	def _setup(self):
+		cherrypy.request.hooks.attach('before_handler', StormHandlerWrapper, priority=100)
+		cherrypy.Tool._setup(self)
+
+cherrypy.tools.storm = StormTool('on_end_resource', try_commit)
+}}}
+
+Simply create the tool and  then in your config you need to have
+
+{{{
+
+tools.storm.on = True
+}}}
+
+If you have questions I go by Zenom on the #cherrypy channel.  A big thanks goes out to fumanchu_, mcella, Niemeyer (Storm) and Radix (Storm) for all their help in getting this working.

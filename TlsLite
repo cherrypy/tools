@@ -1,0 +1,42 @@
+= TlsLiteCherry =
+
+TlsLiteCherry is a little module that enables SSL for CherryPy.  It uses [http://trevp.net/tlslite/ TLS Lite], a pure Python implementation of the SSL/TLS stuff.
+
+A little comment from Daniel !McNair:
+
+ To be quite honest, the only reason I did this is because M2Crypto didn't compile on my Python 2.4-based Gentoo box.  Ergo, I had to find another way to skin the same cat, and essentially copied Tim Evans' SslCherry module, translated the M2Crypto-dependent bit to use TLS Lite instead, and voila.
+
+== Usage ==
+
+{{{
+from cherrypy import cpg
+import tlslite_cherry
+
+...
+
+cpg.root = Root()
+tlslite_cherry.start(configFile='foo.conf')
+}}}
+
+Your config file needs to contain at least this:
+
+{{{
+[server]
+sslKeyFile=privkey.pem
+sslCertFile=cert.pem
+}}}
+
+Here, sslKeyFile is your private key, which needs to be unencrypted (i.e., no passphrase).  The sslCertFile is your public key.
+
+== Security ==
+
+The weak link here is TLS Lite.  I have no idea how secure it is.  I may be using it in an insecure way.  Hard to say.  Here's the take-home message: the security ramifications of using this module have not been analyzed.  Use at your own risk.
+
+== Bugs ==
+
+About the same as SslCherry, actually:
+
+ * The URLs given in cpg.request.base and cpg.request.browserUrl still start with "!http://" instead of the correct "!https://".
+ * If your user forgets and types "!http://" instead of "!https://" the server will crash.  It happens somewhere in TLS Lite when it figures out that the connection isn't encrypted.  A !SyntaxError is thrown, which is appropriate; there is some !SyntaxError  in the stream.  However, !SyntaxError usually means you have a problem in your Python code (as a parse-time error, not a runtime error) so I'm loathe to catch it.  It should be relatively easy to catch that error and return an unencrypted socket instead, however, which could be used to refer the browser to the "!https://" version of the page...
+ * Unix domain sockets are probably not supported.  I don't know this for sure, but I haven't tried it and since SslCherry doesn't do it, I don't expect I will either.
+ * SSL error handling is done very poorly if at all.

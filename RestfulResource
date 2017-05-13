@@ -1,0 +1,107 @@
+== RESTful Resource Recipe ==
+
+REST, or [http://en.wikipedia.org/wiki/REST REpresentational State Transfer], is in part defined by the URI's one uses to identify resources. In particular, a RESTful URI is commonly of the form: {{{/type/id/verb}}}, rather than the more traditional {{{verb.cgi?restype=type&resid=id}}}. That is, rather than code the identification of the resource into CGI params, the identification is performed within the construction of the URI itself, thereby leading to a unique URI for each resource. If you *really* want to be RESTful, you'll take the further step and implement the verb using HTTP methods (GET, POST, PUT, DELETE, etc) instead of shoving it into the URI; unfortunately, browser support for that is limited (but XMLHttpRequest can help).
+
+Anyway, if you write a CherryPy app that hooks into a database, you'll soon find yourself coding all sorts of {{{<input type='hidden' name='ID' value='$ID' />}}} elements in your HTML, and then writing controller code like this:
+
+{{{
+class Invoice:
+    
+    def index(self, ID):
+        item = DB.find(type="Invoice", ID=int(ID))
+        if item is None:
+            raise cherrypy.HTTPError(400, "You must supply a valid ID.")
+        return Template(page="invoice.tmpl", params=item.__dict__)
+   
+    def edit(self, ID, **kwargs):
+        item = DB.find(type="Invoice", ID=int(ID))
+        if item is None:
+            raise cherrypy.HTTPError(400, "You must supply a valid ID.")
+        ...update the object using kwargs...
+        return Template(page="invoiceedited.tmpl")
+   
+    def create(self, **kwargs):
+        item = DB.new(type="Invoice")
+        ...update the object using kwargs...
+        return Template(page="invoicecreated.tmpl")
+   
+    def delete(self, ID):
+        item = DB.find(type="Invoice", ID=int(ID))
+        if item is None:
+            raise cherrypy.HTTPError(400, "You must supply a valid ID.")
+        DB.delete(item)
+        return Template(page="invoicedeleted.tmpl")
+
+}}}
+
+However, if you use RESTful URI's, you can eliminate a lot of that boilerplate by writing {{{<form action="/invoice/$ID/edit">}}} instead of hidden input elements, and then using CherryPy's default method in a base class:
+
+{{{
+class Resource:
+    
+    db_tablename = ''
+    db_id_type = int
+    
+    def default(self, *vpath, **params):
+        if not vpath:
+            return self.index(**params)
+        # Make a copy of vpath in a list
+        vpath = list(vpath)
+        atom = vpath.pop(0)
+        
+        # See if the first virtual path member is a container action
+        method = getattr(self, atom, None)
+        if method and getattr(method, "expose_container"):
+            return method(*vpath, **params)
+        
+        # Not a container action; the URI atom must be an existing ID
+        # Coerce the ID to the correct db type
+        ID = self.db_id_type(atom)
+        item = DB.find(self.db_tablename, ID=ID)
+        if item is None:
+            raise cherrypy.NotFound
+        
+        # There may be further virtual path components.
+        # Try to map them to methods in this class.
+        if vpath:
+            method = getattr(self, vpath[0], None)
+            if method and getattr(method, "expose_resource"):
+                return method(item, *vpath[1:], **params)
+        
+        # No further known vpath components. Call a default handler.
+        return self.show(item, *vpath, **params)
+}}}
+
+Then the above Invoice example becomes:
+
+{{{
+class Invoice(Resource):
+
+    db_tablename = 'Invoice'
+    
+    def show(self, item):
+        return Template(page="invoice.tmpl", params=item.__dict__)
+   
+    def edit(self, item, **kwargs):
+        ...update the object using kwargs...
+        return Template(page="invoiceedited.tmpl")
+    edit.expose_resource = True
+   
+    def create(self, **kwargs):
+        item = DB.new(type="Invoice")
+        ...update the object using kwargs...
+        return Template(page="invoicecreated.tmpl")
+    create.expose_container = True
+   
+    def delete(self, item):
+        DB.delete(item)
+        return Template(page="invoicedeleted.tmpl")
+    delete.expose_resource = True
+
+cherrypy.root.invoice = Invoice()
+cherrypy.server.start()
+}}}
+
+Subway and TurboGears, for example, might benefit from having a class like this.
+
+You might be able to save even more typing by using a naming convention (e.g. {{{def item_edit}}}, {{{def item_delete}}}, {{{def container_create}}}) instead of function attributes ({{{edit.expose_resource = True}}}).

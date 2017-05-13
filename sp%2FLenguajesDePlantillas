@@ -1,0 +1,131 @@
+= Escoger un lenguaje de plantillas =
+
+CherryPy es un entorno web sin fronteras que se integra con una gran variedad de sistemas de plantillas. Este documento te ayudara a escoger cual es la correcta para ti.
+
+''incluir cosas como cache, velocidad, wysiwyg (lo que ves es lo que obtienes), flexibilidad, API, etc''
+
+== CherryTemplate ==
+
+Ver http://cherrytemplate.python-hosting.com/
+
+== Cheetah ==
+||'''Caracteristica'''||'''Soportada'''||'''Comentario'''||
+||Cache|| [X] || Puedes compilar plantillas en codigo Python nativo.  ||
+||Velocidad|| moderada || No es un demonio de velocidad, pero la parte critica de la libreria (el namemapper) esta disponible como binario para linux y windows, lo cual da un gran aumento de rendimiento.  ||
+||Wysiwyg|| [ ] || No. Usa un editor de texto. ||  
+||Flexibilidad|| Increible ||  ||
+||Diseño pytonico|| [X] || Puede usar objetos python en la plantilla. ||
+||Python puro|| [X] ||  ||
+||Sintaxis XML|| [ ] || No, gracias al cielo! ||
+||Elementos del lenguaje||  || Ver [http://www.cheetahtemplate.org/ documentacion de Cheetah]  ||
+||Curva de aprendizaje|| Muy corta ||  ||
+||Comunidad|| Grande ||  ||
+||Sumario || || Cheetah es uno de las maquinas de plantillas mas simples y entendibles que encontraras. La documentacion es excelente. ||
+
+== ClearSilver ==
+||'''Caracteristica'''||'''Soportada'''||'''Comentario'''||
+||Cache|| [ ] ||  ||
+||Velocidad|| || ''No se ha probado'' ||
+||Wysiwyg|| [ ] || No. Usa un editor de textos. ||
+||Objetivo|| Todos ||  
+||Flexibilidad|| Increible ||  ||
+||Diseño pythonico|| [] || Escrito en C, incluye controladores para python, ruby,perl y java ||
+||Integracion con CherryPy || [] ||  ||
+||Python puro|| No ||  ||
+|| Sintaxis XML || [X] ||  ||
+||Elementos del Lenguaje||  || Ver [http://www.clearsilver.net/docs/ Documentacion] ||
+||Curva de aprendizaje|| Corta ||  ||
+||Comunidad|| Pequeña ||  ||
+||Internacionalizacion|| [] || || 
+||Sumario || || ClearSilver usa un acercamiento que separa completamente la distribucion de la logica de la aplicacion.||
+
+== Kid ==
+== HTMLTemplate ==
+== Nevow ==
+== PSP ==
+
+== PyMeld ==
+||'''Caracteristica'''||'''Soportada'''||'''Comentario'''||
+||Cache|| [ ] || El usuario tiene que hacerlo.  ||
+||Velocidad|| || ''No se ha probado'' ||
+||Wysiwyg|| [X] || Las plantillas son HTML/XHTML puro y pueden contener texto temporal. ||
+||Objetivo|| Todos ||  
+||Flexibilidad|| Solo format tipo HTML. ||  ||
+||Diseño pythonico|| [X] || Bastante. ||
+||Integracion con CherryPy || [] ||  ||
+||Python puro|| Si ||  ||
+|| Sintaxis XML || [] || No realmente, Depende del los atributos “id” en HTML/XHTML.||
+||Elementos del Lenguaje||  || Ver [http://www.entrian.com/PyMeld/ Documentacion] ||
+||Curva de aprendizaje|| Gentil y corta ||   ||
+||Comunidad|| [http://www.google.com/search?q=%22pymeld+users%22 Ninguna?] ||  ||
+||Internacionalizacion|| [] || El usuario tiene que hacerlo. || 
+||Sumario || || Herramienta elegante y unica para manipular HTML en una menra pythonica. Cualquier element (X)HTML con un atributo “id” puede ser manipulado, incluyendo clonarlo, borrarlo o cambiarle atributos. ||
+
+
+== XSLT ==
+||'''Caracteristica'''||'''Soportada'''||'''Comentario'''||
+||Cache|| [ ] || El filtro Picket tiene un cache basico.  ||
+||Velocidad|| || ''No se ha probado'' ||
+||Wysiwyg|| [ ] || No. Usa un editor de texto o un editor XSL. ||
+||Objetivo|| Todos ||  
+||Flexibilidad|| Increible. ||  ||
+||Diseño pythonico|| [] || Es totalmente independiente de lenguaje/plataforma. ||
+||Integracion con CherryPy || [X] || [wiki:Picket Picket] es una implementacion de filtro usando el entorno [http://4suite.org 4Suite] ||
+||Python puro|| No ||  ||
+|| Sintaxis XML || [X] ||  ||
+||Elementos del Lenguaje||  || Ver [http://www.w3.org/TR/xslt Documentacion] ||
+||Curva de aprendizaje|| Depende de ti || XSLT es grande y complicado pero hay mucha doucmentacion. ||
+||Comunidad|| Grande ||  ||
+||Internacionalizacion|| [X] || || 
+||Sumario || ||  Es un estandar, XSLT es fantastic si usas principalmente documentos XML. Es un lenguaje totalmente independiente por lo que no tendras que aprender un Nuevo lenguaje de plantillas si planeas cambiar de lenguaje de programacion||
+== Xyaptu ==
+||'''Caracteristica'''||'''Soportada'''||'''Comentario'''||
+||Cache|| [ ] ||  ||
+||Velocidad|| || ''No se ha probado'' ||
+||Wysiwyg|| [ ] || No, usa un editor de textos, pero usando etiquedas estilo xml, el lenguaje esta diseñado para no interferer con el software de diseño grafico||
+||Objetivos|| cualquier cosa || Ya sea javascript, xml, html, python o lo que quieras || 
+||Flexibilidad|| Sin quejas || Ciclos, condiciones, no depende del lenguaje ||
+||Diseño pythonico|| [X] || Usa diccionarios, listas, cadenzas de texto y generadores ||
+||Integracion con CherryPy || [X] || Hay un filtro escrito sobre cherrypy con ejemplos y todo ||
+||Python puro|| [X] || Totalmente, 3 modulos: el Filtro, Xyaptu y Yaptu, funciona en todas partes. ||
+||Elementos del Lenguaje|| 7 || Ver el filtro XyaptuFilter, en la secccion  Markup-syntax ||
+||Curva de aprendizaje|| curva? || Ninguna, el filtro puede ser lo mas dificil (tal vez 5 minutos) ||
+||Comunidad|| Muy chica || Que lastima pero es la verdad. ||
+||Internacionalizacion|| [X] || Sin usar el modulo i18n, Xyaptu esta basado en Nombres de Espacio de Documento, esto es un diccionario regular, las Claves estan en tu plantilla, y seran reemplazadas con los valores en este diccionario. Asi que tener varios diccionarios (uno para cada lenguaje) es suficiente… no es perfecto, pero es algo util. :)|| 
+||Sumario |||| Ver: XyaptuFilter [[br]] Xyaptu significa: e'''X'''tended '''Y'''et '''A'''nother '''P'''ython '''T'''emplating '''U'''nit (aun otra unidad de plantillas de python extendida)||
+
+== ZPT ==
+||'''Caracteristica'''||'''Soportada'''||'''Comentario'''||
+||Cache|| [ ] || ''Desconocido'' || ||
+||Velocidad || [ ] || ||
+||WYSIWYG || [ ] || Se puede usar un editor WSYIWYG para editar XHTML, con scripts en un nombre de espacio XML para etiquetas y atributos. ||
+||Objetivos|| XML || Incluye XHTML y otros formatos XML||
+||Diseño pythonico|| [ ] || ||
+||Flexibilidad||  || ||
+||Integracion con CherryPy || || ||
+||Python puro || [X] || ||
+|| Sintaxis XML || [X] ||  ||
+||Elementos del Lenguaje || || Ver [http://www.zope.org/Documentation/Books/ZopeBook/2_6Edition/AppendixC.stx Documentacion] ||
+||Curva de aprendizaje || Mediana || Depende del conocimiento de python y XML||
+||Comunidad || Mediana || [http://www.zope.org/ Zope] depende de ZPT,asi que la comunidad ya esta disponible. ||
+||Internacionalizacion|| Desconocido || Caracteristicas de internacionalizacion estan disponibles en el entorno zope, pero pueden no funcionar fuera de zope ||
+||Summary|| || Las plantillas ZPT son relativamente faciles de editar sin intervener en los scripts embuidos en la pagina. La sintaxis basica tiene a ser limpia y simple, mientras que es possible hacer otras tareas complejas. Pero solo se puede usar con documentos XML, sin CSS ni javascript. ||
+
+
+== py.xml ==
+||'''Caracteristica'''||'''Soportada'''||'''Comentario'''||
+||Cache|| [ ] || ''No'' || ||
+||Velocidad || [ ] || ||
+||WYSIWYG || [ ] ||  No. Usa un editor de textos ||
+||Objetivo|| XML || Inluye XHTML y otros formatos XML||
+||Diseño pythonico|| [X] || ||
+||Flexibilidad||  || ||
+||Integracion con CherryPy || || ||
+||Python puro || [X] || ||
+|| Sintaxis XML || [ ] || No. Todo el codigo se genera con commandos Python ||
+||Elementos del Lenguaje || || ||
+||Curva de aprendizaje || No || Si puedes escribr python puedes usar py.xml ||
+||Comunidad || Desconocida ||  ||
+||Internacionalizacion|| No || Tendras que hacerlo tu mismo ||
+||Summary|| || Esta libreria ofrece una manera pythonica de generar xml/html basada en ideas de xist que usa clases de python para construiur arboles xml, pero la implementacion de xist es algo pesada porque tiene otros objetivos como tranformacion y soporte de muchos nombres de espacio, pero la idea basica es muy facil. ||
+

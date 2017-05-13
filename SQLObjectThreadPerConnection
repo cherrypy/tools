@@ -1,0 +1,67 @@
+== How to use SQLObject with one connection per thread ==
+
+'''Note: This recipe does not work in CherryPy 3'''
+
+This example follows the CherryPyDatabase recipe.
+
+Many database libraries are not thread safe and can have problems when connections are shared between threads.  SQLite has this problem and will be used in the example below.  SQLObject solves this problem with the ConnectionHub connection.  The following needs to be done:
+
+ * Create the SQLObject connection with ConnectionHub.
+ * Tell CherryPy to set up the connection when each thread starts up.
+
+Here is an example:
+  
+{{{
+import cherrypy
+from sqlobject import *
+from sqlobject.sqlite.sqliteconnection import SQLiteConnection
+
+# Create the ConnectionHub object
+conn = dbconnection.ConnectionHub() 
+
+class Test(SQLObject):
+    """ Basic table object that has one field (name) """
+    _connection = conn
+    name = StringCol()
+
+class Root:
+    def index(self):
+        """ Page will print each name in the database """
+        names = Test.select()
+        for name in names:
+            yield name.name
+            yield '<br>'
+    index.exposed = True
+
+    def reset(self):
+        """ Run this page first to create the table, and add data """
+        Test.dropTable(True)
+        Test.createTable()
+        Test(name='Bob')
+        Test(name='Vlad')
+        return "Reset Complete"
+    reset.exposed = True 
+
+def connect(threadIndex):
+    """ Function to create a connection at the start of the thread """
+    conn.threadConnection = SQLiteConnection('test.db')
+
+# Tell cherrypy to run the connect() function when creating threads
+cherrypy.engine.on_start_thread_list = [connect]
+
+# Start the server
+cherrypy.quickstart(Root())
+}}}
+
+When you run the example make sure to access http://localhost:8080/reset first to set up the database and create the table.
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+||   || replace this || with this ||
+||2.2||cherrypy.quickstart(Root())||cherrypy.root = Root()[[br]]cherrypy.server.start()||
+||   ||cherrypy.engine.on_start_thread_list||cherrypy.server.on_start_thread_list||
+||2.1||cherrypy.server.on_start_thread_list||cherrypy.server.onStartThreadList||
+||2.0||import cherrypy||from cherrypy import cpg as cherrypy||

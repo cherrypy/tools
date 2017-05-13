@@ -1,0 +1,44 @@
+Here's a tool that will help CP handle JSON.
+If a POST or PUT request has a Content-Type of "application/json", this will take the request body and turn it into a Python object using simplejson, and pass it to the handler as params['JSON'].
+
+If a GET request has an Accept header of "application/json", this will take whatever you return from the handler and turn it into a JSON string and return that instead.
+
+{{{
+import cherrypy
+import simplejson
+
+def json_intercept_inbound_tool():
+    """If a request has Content-Type of application/json, process the body as a JSON object and pass it to the handler as params['JSON']."""
+    if cherrypy.request.method in ("POST", "PUT") and cherrypy.request.headers['content-type'].lower() == "application/json":
+        json_string = cherrypy.request.body.read()
+        cherrypy.request.params['JSON'] = simplejson.loads(json_string)
+cherrypy.tools.json_intercept_inbound = cherrypy.Tool('before_handler', json_intercept_inbound_tool)
+
+def json_intercept_outbound_tool():
+    """If a request's Content-Type is application/json, and method is GET,convert the return value to a JSON string"""
+    if cherrypy.request.method in ("GET") and cherrypy.request.headers['Accept'].lower() == "application/json":
+        cherrypy.response.body = simplejson.dumps(cherrypy.response.body)
+        cherrypy.response.headers["Content-Type"] = "application/json"
+cherrypy.tools.json_intercept_outbound = cherrypy.Tool('before_finalize', json_intercept_outbound_tool)
+
+# To include this:
+# from tools import json_interceptor
+#
+# Include the following in your config to turn these on:
+# Turn on json intercept tool:
+#             'tools.json_intercept_inbound.on':True,
+#             'tools.json_intercept_outbound.on':True,
+
+}}}
+
+----
+
+I'd recommend looking at cherrypy.lib.cptools.accept to allow serving JSON responses when the Accept header is "*/*" or other wildcard combinations:
+
+{{{
+#!python
+    if (cherrypy.request.method in ("GET") 
+        and cptools.accept("application/json")):
+}}}
+
+''fumanchu''

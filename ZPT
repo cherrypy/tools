@@ -1,0 +1,62 @@
+= CherryPy with Zope Page Templates (ZPT) =
+
+Zope Page Templates are developed as part of [http://dev.zope.org/Zope3 Zope3], but can be used outside of Zope with very little effort.
+
+ 1. Check out the zpkgtools from Zope3 Subversion; this will be used to build ZPT from Subversion:
+    {{{
+    svn co svn://svn.zope.org/repos/main/zpkgtools/trunk
+    }}}
+ 1. Generate a build of ZPT.
+    {{{
+    % cd trunk
+    % ./bin/zpkg --resource-map=svn://svn.zope.org/repos/main/ReleaseSupport/trunk/PackageMaps/zope3.map -ca ZPT
+    }}}
+    This will produce ZPT-0.0.0.tgz.
+ 1. Install the generated package:
+    {{{
+    % tar zxvf ZPT-0.0.0.tgz
+    % cd ZPT-0.0.0
+    % make install
+    }}}
+ 1. Now that ZPT has been installed, a simple sub-class will allow you to easily pass values into templates.
+    {{{
+    #!python
+
+from zope.pagetemplate.pagetemplatefile import PageTemplateFile
+
+class simpleZpt(PageTemplateFile):
+    def pt_getContext(self, args=(), options={}, **kw):
+        rval = PageTemplateFile.pt_getContext(self, args=args)
+        options.update(rval)
+        return options
+
+    }}}
+ 1. To use a page template in CherryPy, simply return the result of calling the template from your method.  For example:
+    {{{
+#!python
+@cherrypy.expose
+def page():
+   template = simpleZpt('pagetemplate.pt')
+   return template()
+}}}
+ 1. To pass top-level objects into a template, simply specify them as keyword arguments in the call.  For example:
+    {{{
+    #!python
+@cherrypy.expose
+def page():
+   template = simpleZpt('pagetemplate.pt')
+   context={'user':'Anonymous', 'title':'Page Title'}
+   return template(context=context)
+    }}}
+
+For details on ZPT syntax, see the [http://www.zope.org/Documentation/Books/ZopeBook/2_6Edition/AppendixC.stx ZPT Reference].
+
+You may want to try [http://www.owlfish.com/software/simpleTAL/ SimpleTAL] instead - it has similar to ZPT functionality.
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+||   || replace this || with this ||
+||2.0||import cherrypy||from cherrypy import cpg as cherrypy||

@@ -1,0 +1,58 @@
+=== Cachegrind ===
+There are cachegrind viewers for most OS's: [http://kcachegrind.sourceforge.net/cgi-bin/show.cgi Unix], [http://sourceforge.net/projects/wincachegrind Windows] and [http://brent.izolo.com/2006/08/19/running-kcachegrind-on-mac-os-104/ OSX].  In addition, there is a tool for converting from cProfile output to cachegrind output: http://www.gnome.org/~johan/lsprofcalltree.py ...
+
+Cachegrind output can be viewed nicely: http://kcachegrind.sourceforge.net/cgi-bin/show.cgi/KcacheGrindShot3 to discover where the most time is being spent.
+
+Typically one would wrap the call of a particular function to obtain the output, or you can use the tool I built once it makes it to trunk.
+{{{
+import cherrypy
+
+import cProfile
+import lsprofcalltree
+
+#-------------------------------------------------------------------------------
+class CachegrindHandler(cherrypy.dispatch.LateParamPageHandler):
+    """Callable which profiles the subsequent handlers and outputs cachegrind files."""
+        
+    def __init__(self, next_handler):
+        self.next_handler = next_handler
+ 
+    def __call__(self):
+        """ 
+        Profile this request and output results in a cachegrind compatible format.
+        """ 
+        try:
+            p = cProfile.Profile()
+            p.runctx('self._real_call()', globals(), locals())
+        finally:
+            count = 1 
+            filename = None
+            path = cherrypy.request.path_info.strip("/").replace("/", "_")
+            script = cherrypy.request.app.script_name.strip("/").replace("/", "_")
+            path = path + "_" + script
+            while not filename or os.path.exists(filename):
+                filename = os.path.join(thisdir,"cachegrind.out.%s_%d" % (path, count))
+                count += 1
+            print "writing profile output to %s" % filename
+            k = lsprofcalltree.KCacheGrind(p)
+            data = open(filename, 'w+')
+            k.output(data)
+            data.close()
+        return self.result
+
+    def _real_call(self):
+        """Call the next handler and store its result."""
+        self.result = self.next_handler()
+
+
+def cachegrind():
+    """A CherryPy 3 Tool for loading Profiling requests."""
+    cherrypy.request.handler = CachegrindHandler(cherrypy.request.handler)
+
+# Priority of 100 is meant to ensure that this tool runs later than all others, such that 
+# CachegrindHandler wraps all other handlers and therefore can profile them along with
+# the controller.
+cherrypy.tools.cachegrind = cherrypy.Tool('before_handler', cachegrind, priority=100)
+
+}}}
+

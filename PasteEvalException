@@ -1,0 +1,35 @@
+== Using the Paste !EvalException middleware with CherryPy ==
+
+When developing you application you may want to inspect in details the exception or error traceback, [http://pythonpaste.org/ Paste] provides the [http://pythonpaste.org/class-paste.evalexception.middleware.EvalException.html evalexception] module which comes with a set of WSGI middleware to perform advances debugging tasks. !CherryPy let you use this module and benefit from its features. Below is a basi example on how to set it up.
+
+{{{
+#!python
+import cherrypy
+from paste import evalexception
+from paste.httpexceptions import *
+
+class Root:
+    @cherrypy.expose
+    def index(self):
+        raise HTTPBadRequest("you're doomed mate.")
+    
+    @cherrypy.expose
+    def hello(self):
+        raise cherrypy.HTTPError, "aaaaaaaaaaaah"
+
+if __name__ == '__main__':
+    cherrypy.config.update({'global':{'request.throw_errors': True,
+                                      'log.screen': True,
+                                      'engine.autoreload_on': False}})
+    # Create a WSGI application
+    app = cherrypy.Application(Root())
+    app.wsgiapp.pipeline.append(('paste_exc', evalexception.middleware.EvalException))
+    cherrypy.quickstart(app)
+}}} 
+
+ 1. Set the {{{request.throw_errors}}} to {{{True}}}. This will prevent !CherryPy to handle the exception itself.
+ 2. Add the {{{evalexception.middleware.EvalException}}} to the application pipeline of WSGI middlewares.
+
+Et voilà.
+
+For more on using the WSGI pipeline in CherryPy, see [http://cherrypy.org/wiki/WSGI#UsingWSGImiddlewarewithCherryPy the official documentation].

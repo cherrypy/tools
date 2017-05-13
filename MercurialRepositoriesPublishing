@@ -1,0 +1,59 @@
+= Publishing Mercurial Repositories =
+Quote from Mercurial Web site: (http://www.selenic.com/mercurial/wiki/)
+
+  Mercurial (n) a fast, lightweight Source Control Management system designed for efficient handling of very large distributed projects.
+
+If you are using Mercurial, or plan to, then it is very easy to publish your repositories on the Web using !CherryPy since Mercurial's `hgweb` and `hgwebdir` Python modules are WSGI compliant.
+
+Here is my sample source code that utilizes the `hgweb` module.  Edit this code to suit your needs:
+{{{
+#!python
+# cphgweb.py
+
+# Adjust host and port to suit your Web presence:
+sUrlHost='0.0.0.0'
+iUrlPort=8080
+
+# Change this to represent your repository/ies:
+lRepos=[
+    #('<virtual path>','<absolute path>'),
+    ('/project1',r'C:\Program Files\DemoRepos\project1'),
+    ('/project2',r'C:\Program Files\DemoRepos\project2'),
+    ('/project3',r'C:\Program Files\DemoRepos\project3')
+]
+
+# Adjust encoding to suit or comment out:
+import os
+os.environ['HGENCODING']='UTF-8'
+
+import sys
+# Adjust path to your Mercurial Lib folder:
+sys.path.append(r'C:\Program Files\Mercurial\Lib')
+from mercurial.hgweb.hgweb_mod import hgweb
+
+import cherrypy
+cherrypy.config.update({
+    #'environment':'production',
+    'engine.autoreload.on':True,
+    'server.socket_host':sUrlHost,
+    'server.socket_port':iUrlPort,
+    'log.error_file':'error.log',
+    'log.screen':True
+})
+for (sName,sPath) in lRepos:
+    cherrypy.tree.graft(hgweb(sPath),script_name=sName)
+cherrypy.engine.start()
+cherrypy.engine.block()
+}}}
+Change tuples in `lRepos` list to indicate the repositories that you want published, first element of each tuple must have a leading forward slash.
+
+Suggested filename is `cphgweb.py`
+
+For an example using the `hgwebdir` module see my sample code at:
+
+ http://www.selenic.com/mercurial/wiki/index.cgi/PublishingRepositoriesUsingCherryPy
+
+Now with digest authentication example and Windows Service example.
+----
+
+

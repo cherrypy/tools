@@ -1,0 +1,117 @@
+= CherryPy PyLucene integration =
+
+== Problem ==
+
+There are some problems in calling some PyLucene API from CherryPy code.
+I got following Java exception when I tried calling {{{PyLucene.IndexWriter}}} from CherryPy.
+
+{{{
+writer = PyLucene.IndexWriter( "c:/index", PyLucene.StandardAnalyzer(), True)
+JavaError: java.lang.NullPointerException
+}}}
+
+The same API works fine if called from python console.
+
+{{{
+>>> PyLucene.IndexWriter( "c:/index", PyLucene.StandardAnalyzer(), True)
+<IndexWriter: org.apache.lucene.index.IndexWriter@17f3fa0>
+}}}
+
+== Reason ==
+
+The reason for conflict lies in the threading mechanism used by CherryPy.
+
+CherryPy page handlers never run in the main thread, a new thread is created for handling new request. These new threads are local threads created from {{{threading.Thread}}}.
+
+Basically, for a python only main thread can call into PyLucene without any problems.
+For other threads to work with PyLucene, the boehm-gc component of the java runtime ( i.e. the garbage collector) should be informed about their creation. If these threads are created as an instance of {{{PyLucene.PythonThread}}}, it will make sure that the thread is created via libgcj and libgcj garbage collector is aware of it.
+
+
+== Solution ==
+
+The idea is to use {{{PyLucene.PythonThread}}} instead of normal {{{threading.Thread}}} in CherryPy source code.
+
+I did following modifications in CherryPy source code with CherryPy 2.2.1 and PyLucene 2.0.0 on Windows 2000 to work together.
+
+The cherrypy code should be available in following directory inside python installation directory.
+{{{python_installation_dir\Lib\site-packages\cherrypy}}}
+
+Files which have ''threading.Thread'' are:
+
+ * _cpserver.py
+ * _cpwsgiserver.py
+
+You need to add statement {{{import PyLucene}}}
+and replace {{{threading.Thread}}} with {{{PyLucene.PythonThread}}} in above two files.
+
+Also disable CherryPy's autoreload (by adding {{{autoreload.on=False}}} to configuration file) because autoreload uses low level threads.
+
+These changes worked fine in my case.
+
+== More Information ==
+
+For more details, see http://lists.osafoundation.org/pipermail/pylucene-dev/2006-June/001107.html
+
+For porting this solution to Fedora Core 5 Linux, visit http://lists.osafoundation.org/pipermail/pylucene-dev/2006-July/001213.html
+
+----------------------------------------------------------------------------
+
+Above information may not be correct, as its just taken from my experience,
+Let me know if there is any mistake.
+
+Pravin Shinde
+[getpravin at gmail.com]
+
+----------------------------------------------------------------------------
+
+A solution to avoid changing the PyLucene source code (inspired by the dummy_threading module mentioned to me by my colleague Richard Philips).[[BR]]
+Import the following code on top of your application, before you import cherrypy. All subsequent {{{import threading}}} commands will import this module and use the {{{PyLucene.PythonThread class}}}. Be sure to replace the {{{anet.explorator.exploratorthreading}}} path by the name and path you give to the module. 
+[[BR]]
+It is necessary to fill the locals() table with the _names of the threading module since CherryPy addresses some _classes directly (_Timer for example)
+
+
+
+{{{
+from threading import *
+from threading import __all__
+
+import threading
+all = dir(threading)
+for name in all:
+   if name[0] == '_' and name[1] != '_':
+       locals()[name] = getattr(threading, name)
+
+import sys
+del sys.modules['threading']
+
+try:
+   sys.modules['threading'] =
+sys.modules['anet.explorator.exploratorthreading']
+except:
+   sys.modules['threading'] = sys.modules['exploratorthreading']
+
+import PyLucene
+class Thread(PyLucene.PythonThread):
+   def __init__(self,  *args, **kwds):
+       PyLucene.PythonThread.__init__(self,*args, **kwds)
+}}}
+
+
+Marc Jeurissen[[BR]]
+University of Antwerp[[BR]]
+marc.jeurissen@ua.ac.be
+
+== Update for PyLucene 2.3 ==
+
+PyLucene >= 2.3 lacks PythonThread. The authors say that the new version no longer needs it. You can instead use ordinary Python threads; you just have to call attachCurrentThread() before using PyLucene. See this thread [http://lists.osafoundation.org/pipermail/pylucene-dev/2008-February/002335.html] and the readme for PyLucene [http://svn.osafoundation.org/pylucene/trunk/README].
+
+Joe Barillari [[br]] cherrypy.wiki@barillari.org
+
+== Update for PyLucene 2.4 ==
+Most of the information on this page is obsolete.  Some current integration issues:
+ * Autoreload is not compatible with the VM initialization.  Set engine.autoreload.on to False.
+ * WorkerThreads must be attached to the VM  (lucene.getVMEnv().attachCurrentThread()).  Don't bother with detachCurrentThread;  it's unnecessary and can cause crashes.
+ * Also recommended that the VM ignores keyboard interrupts for clean server shutdown.  Pass vmargs='-Xrs' to lucene.initVM.
+
+The [http://code.google.com/p/lupyne/ LuPyne] project provides a standalone search server based on CherryPy.  It can be used as an example to be customized, or as a pythonic alternative to [http://lucene.apache.org/solr/ Solr].
+

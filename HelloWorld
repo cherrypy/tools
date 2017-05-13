@@ -1,0 +1,32 @@
+= Static Images in Cherrypy =
+
+Here is a simple example of a staci image served by Cherrypy. 
+
+{{{
+import cherrypy
+
+class Root:
+    @cherrypy.expose
+    def index(self):
+        return """ <html>
+<head>
+<title>CherryPy static imagl</title>
+</head>
+<html>
+<body>
+<img src="images/today.png">
+</body>
+</html>"""
+
+cherrypy.config.update({'server.socket_host': '10.0.0.212',
+                            'server.socket_port': 80, })
+
+conf = {'/images': {'tools.staticdir.on': True,
+        'tools.staticdir.dir': '/home/eur/cherrypy/images'}}
+print conf
+cherrypy.quickstart(Root(), '/', config=conf)
+
+
+}}}
+
+Yes, this has an actual directory in it, which will be different on your system. 

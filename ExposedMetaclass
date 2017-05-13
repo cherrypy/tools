@@ -1,0 +1,20 @@
+Instead of exposing each method of an object, this metaclass exposes all object methods that don't start with a '_' character.
+{{{
+#!python
+import types
+class exposed(type):
+   def __init__(cls, name, bases, dict):
+      super(exposed, cls).__init__(name, bases, dict)
+      for name, value in dict.iteritems():
+        if type(value)==types.FunctionType and not name.startswith('_'):
+           value.exposed = True
+}}}
+
+Usage:
+{{{
+#!python
+class MyClass:
+   __metaclass__ = exposed
+   def hello(self): 
+      return 'This is exposed!'
+}}}

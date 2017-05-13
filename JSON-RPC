@@ -1,0 +1,29 @@
+== JSON-RPC ==
+
+Requires [http://jsolait.net jsolait]; extract it to javascript directory, or change path in cfg file and demo file.
+
+If an error occurs on the server it will be reported back to jsolait.
+
+JSON functions have to be exposed as such, which mean less confusion.
+
+The demo was tested with Windows XP, IE 6 and FF 1.0+. Theoretically, it should work with any browser that supports xmlhttp function (a la AJAX). If you have tested this on another platform or browser, please let us know.
+
+Note that most browsers will not request data from a server other than the one containing the xmlhttp call (this minimizes cross-site scripting attacks).
+
+== Getting it working ==
+
+Run cherrypy 2.0 and not 2.1 since that breaks things.  Also you might get permission problems using firefox, so use IE.
+
+You need to copy the following files to C:\Python23\Lib\site-packages\cherrypy\lib\filter
+
+{{{
+json.py
+jsonrpcfilter.py
+xyaptu.py
+xyaptufilter.py
+yaptu.py
+}}}
+
+You get the xyaptufilter stuff from [http://www.cherrypy.org/wiki/XyaptuFilter]
+
+There are two programs you want to get running.  The first is the one is jsontest.py which is driven by .....\javascript\tester.html.  The second is the quadratic app which I have no tips to share since I haven't got that far yet.

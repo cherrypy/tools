@@ -1,0 +1,124 @@
+The dispatcher is in charge of mapping the requested path to an object, and setting cherrypy.response.body or raising a 404. If you don't like the way CherryPy does this by default you can easily change it. You can even use multiple dispatchers to control different parts of your application. Basically, a dispatcher can be any callable that accepts a path as an argument.
+
+For example, here's a simple dispatcher that uses Routes:
+
+{{{
+#!python
+import cherrypy 
+import routes 
+ 
+class MethodDispatch: 
+    """
+    A Routes based dispatcher for CherryPy
+    Based on http://www.aminus.org/blogs/index.php/fumanchu/2006/02/26/making_a_custom_cherrypy_request_class_f
+    """ 
+    def __init__(self): 
+        self.mapper = routes.Mapper() 
+        self.controllers = {} 
+ 
+    def redirect(self, url): 
+        raise cherrypy.HTTPRedirect(url) 
+ 
+    def connect(self, name, route, controller, conf={}, **kwargs): 
+        self.controllers[name] = controller 
+        self.mapper.connect(name, route, controller=name, **kwargs) 
+        cherrypy.tree.mount(root=None,conf=conf) 
+ 
+    def finalize(self): 
+        self.mapper.create_regs(self.controllers.keys()) 
+ 
+    def dispatch(self, path): 
+        """ Find the right page handler """ 
+        request = cherrypy.request 
+ 
+        # Tell routes to use the cherrypy threadlocal object 
+        config = routes.request_config() 
+        if hasattr(config,'using_request_local'): 
+            config.request_local = lambda: request 
+            config = routes.request_config() 
+ 
+        # Hook up the routes variables for this request 
+        config.mapper = self.mapper 
+        config.host = request.headers.get('host',None) 
+        config.protocol = request.scheme 
+        config.redirect = self.redirect 
+        config.mapper_dict = self.mapper.match(path) 
+        request.params.update(config.mapper_dict) 
+ 
+        if config.mapper_dict: 
+            c = config.mapper_dict.get('controller',None) 
+            if c: 
+                controller = self.controllers[c] 
+ 
+                # http://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html#sec9 
+                methods = ('OPTIONS','GET','HEAD','POST', 
+                           'PUT','DELETE','TRACE','CONNECT') 
+                if request.method not in methods: 
+                    raise cherrypy.HTTPError(400,'Bad Request') 
+ 
+                # If request method is HEAD, return the page handler 
+                # for GET, and let CherryPy take care of dropping  
+                # the response body 
+                method = request.method 
+                if request.method == "HEAD": 
+                    method = "GET" 
+ 
+                page_handler = getattr(controller,method,None) 
+                if not page_handler: 
+                    raise cherrypy.HTTPError(501,'Not Implemented') 
+             
+                cherrypy.response.body = page_handler(**request.params) 
+                return 
+ 
+        # No page handler found 
+        raise cherrypy.NotFound(path) 
+}}}
+
+No black magic or anything scary involved. Although the dispatcher wouldn't have to be a class it's more useful this way as it can be more easily used as a component. The dispatcher code above gives you a clear distinction between different HTTP methods. Now you can write code like this:
+
+{{{
+#!python
+class Test: 
+     
+    def GET(self, **kwargs): 
+        return '''''<form method="post" action="/">
+        <input type="text" name="test" value="test">
+        <input type="submit"></form>''' 
+ 
+    def POST(self, **kwargs): 
+        return kwargs['test']
+
+
+dispatcher = MethodDispatch()
+# Add a route to our controller
+dispatcher.connect(name='Test', route='/', controller=Test(), conf=config)
+dispatcher.finalize()
+
+# Update the config to use our new dispatcher
+config = {'environment': 'production',
+          'request.dispatch': dispatcher.dispatch,
+          }
+cherrypy.config.update(config)
+
+cherrypy.server.start() 
+cherrypy.engine.start() 
+}}}
+
+That's how easy writing your own dispatcher is.
+
+----
+
+skam said on 2006-06-24 16:16
+
+Good! It looks like web.py
+
+----
+
+Sylvain said on 2006-05-04 03:50
+
+Nice article :)
+
+----
+
+It's funny you mention black magic.  It looks like I need some to get
+cherrypy to not return 404 for any URL with a custom dispatcher.

@@ -1,0 +1,46 @@
+== Using HTMLTemplate with CherryPy ==
+
+HTMLTemplate can be [http://freespace.virgin.net/hamish.sanderson/htmltemplate.html downloaded here]
+
+=== test.html ===
+{{{
+#!text/html
+<html>
+<head>
+<title node="con:pagetitle">Test title</title>
+</head>
+<body>
+<p node="con:myquote">Test quote</p>
+</body>
+</html>
+}}}
+
+=== test.py ===
+{{{
+#!python
+
+import cherrypy
+from HTMLTemplate import Template
+ 
+class Begin:
+    def renderTemplate(self, node, title, quote):
+        node.pagetitle.content = title
+        node.myquote.content = quote
+ 
+    @cherrypy.expose
+    def index(self):
+        html = file("test.html").read()
+        template = Template(self.renderTemplate, html)
+        return template.render('Quote of the Day', 'God does not play dice.')
+ 
+cherrypy.quickstart(Begin())
+}}}
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+||   || replace this || with this ||
+||2.2||cherrypy.quickstart(Begin())||cherrypy.root = Begin()[[br]]cherrypy.server.start()||
+||2.0||import cherrypy||from cherrypy import cpg as cherrypy||

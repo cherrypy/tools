@@ -1,0 +1,58 @@
+I've just started to build a CP module for [http://www.fckeditor.net FCKeditor].
+
+It is in his first stages. Comments and tests results are welcome.
+
+To use it, you must:
+  * download and install fckeditor.py
+  * download and install FCKeditor in a folder called "FCKeditor"
+  * create 2 folders: "content" and "images". They will be used to store pages and images.
+  * create a CP config file referencing "content" and "images" as static elements.
+{{{
+[staticContent]
+content=content
+images=images
+}}}
+
+  * Finally, you must tell to FCKeditor that CP is his friends. For that adapt FCKeditor/fckconfig.js like following:
+{{{
+   FCKConfig.ImageBrowser = true ;
++  FCKConfig.ImageBrowserURL = FCKConfig.BasePath + "filemanager/browser/default/browser.html?Type=Image&Connector=/editor/connector" ;
+-  FCKConfig.ImageBrowserURL = FCKConfig.BasePath + 'filemanager/browser/default/browser.html?Type=Image&Connector=connectors/asp/connector.asp' ;
+}}}
+
+Be careful to align your cpg.root to Connector URL and to remove (or comment) the existing asp Filemanager. 
+
+Voila!!
+Start your CP daemon: python fckeditor.py and browse to localhost:8080/ and follow simple links I've put there.
+
+I've tested it with FCKeditor-2.0RC2 and FCKeditor-2.0RC3 on Gentoo with FireFox-1.0. Following FCKeditor website it works with IE 5.5+, Firefox 1.0+, Mozilla 1.3+ and Netscape 7+.
+
+
+  * Attachment Note: fckeditor.py - Thu 10 Mar 2005 02:27:49 PM CST.
+  There is a bug with edit link. The way in which the test.html is written into the page for editing causes Javascript errors. Below is the diff of a fix.
+{{{
+28c28,29
+-         return template % {'content':'','page':page}        
+---
++       content = "''"
++       return template % {'content':content,'page':page}  
+49,50c49,59
+-         content=open(fpath).read()
+-         content=content.replace("\'","\\'")
+---
++ 
++       content = ""
++       file = open(fpath)
++       for line in file.readlines():
++               line = line.replace("\'","\\'")
++               line = line.replace("\n","")
++               line = line.replace("\r","")
++               content += "'%s' +\n" % line
++ 
++       content += "''"
++       
+170c179
+- oFCKeditor.Value      = '%(content)s' ;
+---
++ oFCKeditor.Value      = %(content)s;
+}}}

@@ -1,0 +1,83 @@
+= Very, Very simple authentication framework =
+
+This framework is based on the idea that when a user logs in, a {{{user}}} variable is set in the session. Say, something like this:
+{{{
+#!python
+    def login(self, name,password):
+        # todo: validate password
+        # but you should be able to do so yourself.. 
+        toSession(user=name) # assumes correct password, whatever it is
+        # for debugging purposes
+        # get the referer
+        url = cpg.request.headerMap.get('Referer','/main')
+        # move over there!
+        httptools.redirect(url)
+        # well, i used xyaptuTemplate, so i'll have to set this as well :)
+        cpg.response.xyaptuTemplate.noFooter = True
+        cpg.response.xyaptuTemplate.noHeader = True
+
+    login = expose(login) 
+    # or, if you use the checkAuth method, you should simple .expose=True it...
+    # else, some unauthorized user might never authorize him/herself because he/she
+    # is unauthorized :)
+}}}
+
+
+
+== Sample code: ==
+The following only allows the administrator to be logged in. One could have similar methods only available (like maintaining an order/shopping cart/whatever) for other, validated users.
+
+{{{
+#!python
+class AdminNews(object):
+    def newNewsItem(self,title,text,public):
+        pass # stripped the code
+    newNewsItem = adminOnly(newNewsItem)        
+
+    def index(self):
+        # sample code
+        yield "templates/admin.news.index.html"
+    index = adminOnly(index)
+
+class AdminInstellingen(object):
+    def index(self):
+        # again, sample code
+        yield "templates/admin.instellingen.index.html"
+    index = adminOnly(index)
+}}}
+
+== The code: ==
+{{{
+#!python
+def checkAuth():
+    # this is called default before the actual method is called, 
+    # when a method is exposed using
+    #    methodname = expose(methodname)
+    # one could add basic checking in here
+    pass 
+
+def expose(func, preFunc=checkAuth, postFunc=None):
+    def helper(*p,**kwp):
+        if preFunc:
+           preFunc()
+        result = func(*p,**kwp)
+        if postFunc:
+           postFunc()
+        return result   
+    helper.exposed = True
+    return helper
+
+def adminOnly(func):
+    def checkIsAdminOrRaiseError():
+        if fromSession('user') != 'admin':
+            raise NotFound
+    return expose(func,preFunc = checkIsAdminOrRaiseError)
+    
+def validCustomerOnly(func):
+    def checkIsValidUserOrRaiseError():
+        # check if it's a valid customer number
+        # see this as sample code :))
+        if fromSession('user') not in cpg.root.dataprovider.debtors:
+            raise NotFound
+    return expose(func,preFunc = checkIsValidUserOrRaiseError)
+}}}

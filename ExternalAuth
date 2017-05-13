@@ -1,0 +1,71 @@
+= digest and LDAP authentication  =
+
+( Trac uses same idea for "ortogonal" authentication with Apache http://trac.edgewall.org/wiki/TracAuthenticationIntroduction. )
+
+I've been wondering if CherryPy is the right place for doing authorization. Because instead of _coding_ authorization it is easier to _declare_ it in the front web servers. Instead of re-inventing the wheel, let the right tool handle the job.
+
+Looking at the Apache mod_auth digest it sais: "it has not been extensively tested and is therefore marked experimental". In lighttp mod_digest documentation, there is a limitation: "The implementation of digest method is currently not completely compliant with the standard as it still allows a replay attack". I mean no offense to CherryPy authentication modules, but I would assume more people use Apache and Lighty authentication, therefore higher probability to have the security fixed in the webservers. If hacker manages to manipulate the headers and reach CherryPy port, then this is a bug in Apache / Lighty code.
+
+IMHO delegating authentication is the Right Thing (TM) to do, since it also makes sense to use a reverse proxy (apache/lighttpd/squid) in front of CherryPy to deal with buffer overflows, malformed URLs and other nasty things. This allows CherryPy to run in session-less mode, which allows for easier fail-over and load balancing.
+
+For Intranet deployments, most users would appreciate not to see "Login" dialog at all. External authentication allows Single-Sign-On by using Windows Integrated Authentication (using IIS, not sure about Apache), and possibly on the Mac ("kerberized" application, Apple Open Directory)
+
+Since digest authentication is hard, lighttpd page suggests you are better protected by SSL (even with plain text passwords on the wire), than with digest over plain http.
+
+Here is sample configuration for Lighty (only relevant lines from lighttpd.conf):
+{{{
+server.modules = (
+	"mod_access",
+	"mod_auth",
+	"mod_proxy",
+	"mod_accesslog" )
+server.port = 8090
+proxy.server = ( "" => ( ( "host" => "127.0.0.1", "port" => 8080 ) ) )
+auth.backend = "plain"
+auth.backend.plain.userfile = "/opt/local/etc/lighttpd/lighttpd.user"
+auth.require = ( "/" => (
+	"method" => "digest",
+	"realm" => "cubulus",
+	"require" => "valid-user"
+) )
+}}}
+
+CherryPy receives header 'Authorization' with content 'Digest username="a", realm="cubulus", nonce=.., uri=.. qop="auth" ..... '
+
+Easy thing is that if authorization fails, CherryPy receives nothing, so it's enough to look for Digest username="XXX"
+
+Here is the code:
+{{{
+class Layout:	
+	#if you have parameter 'user', it allows USERNAME SPOOFING ATTACK
+	#instead, read the validated headers 
+	#
+	@cherrypy.expose
+	def index(self, params ..):
+		return self.indexNoSecurity(getAuthUser(), params..)
+
+	#
+	# DON*T EXPOSE !!
+	def indexNoSecurity(self, user=ANONYMOUS, params..):
+		#default user value used ex: for testing without a webserver
+		...
+}}}
+
+And here is the helper function and constant:
+
+{{{
+ANONYMOUS = 'anonymous'
+def getAuthUser():
+	#get authorization from apache/lighttpd/squid
+	try:
+		hdr = cherrypy.request.headers['Authorization']
+		start = hdr.find('Digest username="')
+		end = hdr.find('"', start+17)
+		return hdr[start+17:end]
+	except KeyError:
+		return ANONYMOUS
+}}}
+
+Cheers, Alexandru Toth
+
+http://sourceforge.net/projects/cubulus/

@@ -1,0 +1,31 @@
+= Block Google Web Accelerator =
+
+{{{
+#!python
+def block_gwa():
+    if cherrypy.request.headers.get("X_MOZ", "") == "prefetch":
+        msg = "Google Web Accelerator requests are not allowed."
+        raise cherrypy.HTTPError(403, msg)
+cherrypy.tools.block_gwa = cherrypy.Tool('on_start_resource', block_gwa)
+}}}
+
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+== 2.2 ==
+
+{{{
+#!python
+class GoogleWebAcceleratorBlocker:
+    def onStartResource(self):
+        if cherrypy.request.headerMap.get("X_MOZ", "") == "prefetch":
+            msg = "Google Web Accelerator requests are not allowed."
+            raise cherrypy.HTTPError(403, msg)
+}}}
+
+== 2.1 ==
+
+Use HTTPClientError instead of HTTPError.

@@ -1,0 +1,180 @@
+This is a general publishing tool for cherrypy3. The intent is to allow for multiple response formats based on a getvar (or in abscense of, a default that is overridable using cherrypy config options). It was tested to work with python3 some time ago, but this recent revision hasn't been tested against python3. Dependencies include: lxml, json, yaml. These can be edited in source where not needed.
+
+It is also designed to be extensible with more rendering options easily by declaring a new Publisher method named render_[renderer]. To request use of it, you can pass the getvar format=[renderer] or set a cherrypy config option, publisher.format = [renderer], or of course add it to the decorator options @publisher(format='json')
+
+This code also features a dict2xml converter, and conversely, requires that all controller methods that use publisher return dict objects. This allows straight dicts to be returned, or a generator that yields [(key, value), (key, value)] and will automatically convert to a workable xml document. This makes publisher incompatible with cherrypy streaming responses (i believe). Take the following example:
+
+{{{
+...
+@publisher(template='index.xsl')
+def index(self):
+    return dict(content='Hello World!')
+}}}
+
+This will yield an xml document like so that will be passed to your stylesheet:
+{{{
+<document>
+    <content>Hello World!</content>
+</document>
+}}}
+if format='xml', you can retrieve the straight xml document (useful for debugging xslt). Generally, you will want to set the publisher.template_dir in your app.conf file. In some cases, such as working with multiple apps being mashed up into one new app, it might be useful to declare template_dir in the decorator, or w/e your preference is.
+
+Publisher also supports adding your own custom xslt extensions written with lxml and python. Once you have written and created your lxml extension instance, simply set it as follows
+
+Publisher.lxmlext = extensions
+
+Now your extensions will be available for declaration in your stylesheets. Also, Publisher supports extending default returns and these extensions should be localized to each app configuration, in the case that publisher is being shared across multiple instances of cherrypy apps. This can be useful for things such as site menus that require a server side component to generate or page titles where multiple apps are sharing similar stylesheets. Here's an example:
+{{{
+class Title(object):
+    def __call__(self):
+        return {'name': 'JS', 'desc': 'Easy Prototypal Inheritance with Javascript'}
+title = Title()
+
+class Root(object):
+    _cp_config = {'publisher.extend_xml': {'title': title}}
+}}}
+
+And now your stylesheets can grab the value-of select="//title/name", or "//title/desc".
+
+Ideally, this tool should be added to your own toolbox or cherrypy's default. In which case, all examples above (especially in conf declarations) "publisher" should be prepended with the name of your toolbox.
+
+The code is as follows:
+{{{
+# -*- coding: utf-8 -*-
+import cherrypy
+from cherrypy._cptools import HandlerWrapperTool
+from lxml.etree import Element, tostring, _Element, parse, XSLT
+from copy import deepcopy
+import json
+import yaml
+import os
+import sys
+from types import GeneratorType
+
+try:
+    from pymongo.bson import ObjectId
+except:
+    class ObjectId(object): pass
+
+
+if sys.version[0] == '2':
+    dtypes = (unicode, str, int, float, ObjectId)
+else:
+    dtypes = (str, int, float, ObjectId)
+
+def str_format(data):
+    if sys.version[0] == '2':
+        return unicode(data)
+    else:
+        if isinstance(data, bytes):
+            return data.decode()
+        return str(data)
+
+def dict2etree(response_dict):
+    document = Element('document')
+    def _dict2etree(data, et=None):
+        '''Iterates over a dict and produces a basic xml file'''
+        if isinstance(data, dtypes):
+            et.text = str_format(data)
+
+        elif isinstance(data, list):
+            for i,x in enumerate(data):
+                tag = deepcopy(et)
+                et.getparent().extend([tag])
+                _dict2etree(x, tag)
+            et.getparent().remove(et)
+
+        elif isinstance(data, dict):
+            for k, v in data.items():
+                tag = Element(k)
+                if et is None:
+                    document.append(tag)
+                else:
+                    et.append(tag)
+                _dict2etree(v, tag)
+    _dict2etree(response_dict)
+    return document
+
+
+class Publisher(HandlerWrapperTool):
+    lxmlext = None
+    
+    def __init__(self):
+        self.extend = {}
+        HandlerWrapperTool.__init__(self, self.publish)
+
+    def _setup(self, *args, **kwargs):
+        if cherrypy.request.config.get('tools.staticdir.on', False) or \
+            cherrypy.request.config.get('tools.staticfile.on', False):
+            return
+        HandlerWrapperTool._setup(self, *args, **kwargs)
+    
+    def callable(self, format='xslt', template_dir='views/site', template='index.xsl', extend_xml={}):
+        cherrypy.request.format = format
+        HandlerWrapperTool.callable(self)
+    
+    def params(self):
+        if 'format' in cherrypy.request.params:
+            format = cherrypy.request.params.pop('format')
+            cherrypy.request.format = format
+        
+    def publish(self, next_handler, *args, **kwargs):
+        self.params()
+        response_dict = next_handler(*args, **kwargs)
+        if isinstance(response_dict, GeneratorType):
+            response_dict = dict(response_dict)
+        conf = self._merged_args()
+        response = getattr(self, 'render_%s' % cherrypy.request.format)(response_dict, conf)
+        return response
+
+    def extend_xml(self, e):
+        r = {}
+        if isinstance(e, dict):
+            for k, v in e.items():
+                if hasattr(v, '__call__'):
+                    r[k] = v()
+                if isinstance(v, dict):
+                    r[k] = v
+        return r
+    
+    def render_raw(self, response_dict, conf):
+        return response_dict
+    
+    def render_json(self, response_dict, conf):
+        cherrypy.response.headers['Content-Type'] = 'text/json'
+        return json.dumps(response_dict)
+
+    def render_yaml(self, response_dict, conf):
+        cherrypy.response.headers['Content-Type'] = 'text/yaml'
+        return yaml.dump(response_dict)
+    
+    def render_xml(self, response_dict, conf):
+        cherrypy.response.headers['Content-Type'] = 'text/xml'
+        
+        x = conf.get('extend_xml', False)
+        if x:
+            response_dict.update(self.extend_xml(x))
+
+        document = dict2etree(response_dict)
+        return tostring(document, pretty_print=True, xml_declaration=True, encoding='UTF-8')
+
+    def render_xslt(self, response_dict, conf):
+        cherrypy.response.headers['Content-Type'] = 'text/html'
+        
+        x = conf.get('extend_xml', False)
+        if x:
+            response_dict.update(self.extend_xml(x))
+                    
+        document = dict2etree(response_dict)
+        template = os.path.join(conf['template_dir'], conf.get('template', 'index.xsl'))
+        cherrypy.response.template = template # for use outside of publisher, such as xslt extensions
+        
+        l = parse(open(template))
+        xslt = XSLT(l, extensions=self.lxmlext)
+        response = xslt(document)
+
+        return tostring(response, pretty_print=True, method='html', xml_declaration=False, encoding='UTF-8')
+
+
+}}}
+

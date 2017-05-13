@@ -1,0 +1,101 @@
+= Running CherryPy behind Apache using Mod_WSGI =
+
+This is a basic HOWTO with some Tips and Tricks to using Mod_WSGI with CherryPy 3.x and Apache.
+
+Note: This is not intended as a basic tutorial on how to setup mod_wsgi. It is recommended you first read more introductory material for mod_wsgi. Start by reading through various documents linked off Installation Instructions. You can download mod_wsgi from http://code.google.com/p/modwsgi/
+
+== Basic Config ==
+
+The CherryPy framework application objects are already a WSGI compliant application. Thus a script file for a CherryPy application which is compatible with mod_wsgi would be constructed as follows:
+
+{{{
+#!python
+import sys
+sys.stdout = sys.stderr
+
+import atexit
+import threading
+import cherrypy
+
+cherrypy.config.update({'environment': 'embedded'})
+
+if cherrypy.__version__.startswith('3.0') and cherrypy.engine.state == 0:
+    cherrypy.engine.start(blocking=False)
+    atexit.register(cherrypy.engine.stop)
+
+class Root(object):
+    def index(self):
+        return 'Hello World!'
+    index.exposed = True
+
+application = cherrypy.Application(Root(), script_name=None, config=None)
+}}}
+
+== Engine usage in 3.0 ==
+
+Although the CherryPy application objects act as a WSGI application, if using CherryPy 3.0 it is necessary as shown above to startup the internal CherryPy engine and ensure that it is subsequently shutdown on process shutdown. If the CherryPy engine is not started, then the client will always see the response:
+
+{{{
+503 Service Unavailable
+The CherryPy engine has stopped.
+}}}
+
+It is necessary to ensure that the CherryPy engine is stopped on process shutdown. This is so that any actions registered for execution on process shutdown with the CherryPy framework will be called.
+
+CherryPy 3.1 supports running CherryPy applications as WSGI applications without requiring the internal CherryPy engine be run manually, so for that and later versions the lines:
+
+{{{
+#!python
+if cherrypy.engine.state == 0:
+    cherrypy.engine.start(blocking=False)
+    atexit.register(cherrypy.engine.stop)
+}}}
+
+...are not required.
+
+== Signal handling in 3.0 ==
+
+Note that the internal CherryPy engine by default attempts to register signal handlers for SIGTERM and SIGHUP in 3.0. Registration of signal handlers by a WSGI component application is not something that it should be doing as it has the potential to interfere with the operation of the web server which is hosting the application. In the case of Apache, the registration of a signal handler by CherryPy for SIGTERM can prevent Apache child processes from shutting down cleanly as it replaces the signal handler that Apache has already installed and which it uses for that purpose.
+
+To avoid such problems caused by signal handlers being registered from Python code, mod_wsgi currently ensures that all signal handler registrations from within Python code are ignored. Although this is the case, CherryPy 3.0 can also be configured as shown not to register the signal handlers in the first place. This is done in this instance by configuring CherryPy as running in an 'embedded' environment. If such configuration is not done, or a version of CherryPy is used which doesn't support this option, log messages may still be found in the Apache error log file indicating when such signal handler registrations are being attempted. Because mod_wsgi is actually silently ignoring the signal handler registrations, such error messages in the Apache error log can be ignored.
+
+Also note that the CherryPy engine also defaults to logging information to sys.stdout when a portable WSGI component application should not do that. To catch such portability problems mod_wsgi restricts use of sys.stdout. Defining CherryPy as running in an 'embedded' environment should avoid this restriction, but sys.stdout is also mapped to sys.stderr in the script in case anything else also attempts to log to sys.stdout. Instead of doing the mapping in the script the WSGIRestrictStdout directive could also be set to Off. 
+
+== Apache configuration ==
+
+If you are using a version of mod_wsgi older than 3.0 then you must explicitly set the WSGI Application Group to %{GLOBAL}. Otherwise thread local data in cherrypy.thread_data will be wiped after a request is completed.
+
+{{{
+WSGIScriptAlias /mywebsite /path/to/script.py
+<Directory /path/to>
+    WSGIApplicationGroup %{GLOBAL}
+    <IfVersion >= 2.4>
+        Require all granted
+    </IfVersion>
+    <IfVersion < 2.4>
+        Order allow,deny
+        Allow from all
+    </IfVersion>
+</Directory>
+}}}
+
+Detailed information is available at http://code.google.com/p/modwsgi/issues/detail?id=120
+
+== Using a configuration file ==
+
+One possibility of using a configuration file is passing the path to the file using !SetEnv.
+
+Apache site configuration:
+{{{
+WSGIScriptAlias /mywebsite /path/to/script.py
+SetEnv configuration /path/to/config/file
+}}}
+
+In your application you can do the following:
+
+{{{
+def application(environ, start_response):
+    cherrypy.config.update(environ['configuration'])
+    cherrypy.tree.mount(Root(), script_name=None, config=None)
+    return cherrypy.tree(environ, start_response)
+}}}

@@ -1,0 +1,86 @@
+= Expose As =
+
+Expose As is a decorator meant to replace the built in @cherrypy.expose. It provides a couple of extra features.
+
+(updated for CherryPy 2.1 beta)
+
+== Features ==
+
+ * Expose methods with unicode names, spaces, file extensions:
+{{{
+#!python
+@expose(as=u'∞')
+@expose(as='foo bar')
+@expose(as='default.css')
+}}}
+(solves tickets #115 and #87 )
+
+ * Trailing Slashes
+
+Remove trailing slashes in the URI by default. Add trailing slashes with slash=True.
+
+{{{
+#!python
+@expose(slash=True)
+}}}
+
+
+== The Code ==
+{{{
+#!python
+
+import cherrypy
+from cherrypy import _cphttptools
+from cherrypy.lib import httptools
+import sys, types
+
+def expose(as=None, slash=False):
+    
+    def expose(func):
+        
+        # remove/add trailing slashes
+        
+        def wrapper(*args, **kwargs):
+            if len(cherrypy.request.path) > 1:
+                if not slash and cherrypy.request.path[-1] == "/":
+                    httptools.redirect(cherrypy.request.path[:-1])
+                elif slash and cherrypy.request.path[-1] != "/":
+                    httptools.redirect(cherrypy.request.path + "/")
+                else:
+                    return func(*args, **kwargs)
+            else:
+                return func(*args, **kwargs)
+        
+        wrapper.exposed = True
+        wrapper.func_name = func.func_name
+            
+        # 'rename' the function
+        
+        if as:
+            # work around the . to _ hack (#87)
+            name = as.replace(".", "_")
+            
+            nameUnicode = name.encode("utf-8")
+            
+            classDict = sys._getframe(1).f_locals
+            classDict[nameUnicode] = wrapper
+            
+            # Firefox hack
+            try:
+                nameIso = name.encode("iso-8859-1")
+                classDict[nameIso] = wrapper
+            except UnicodeEncodeError:
+                pass
+            
+            return None
+        else:
+            return wrapper
+            
+    if isinstance(as, types.FunctionType) or isinstance(as, types.MethodType):
+        func = as
+        as = None
+        return expose(func)
+    else:
+        return expose
+
+}}}

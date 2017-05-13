@@ -1,0 +1,51 @@
+Sometimes it may be useful to continue processing the request only if client is still connected.
+
+Example:
+Enter server address in the browser. Within 20 seconds, close the browser window. In CherryPy server log you should see info about that.
+
+The function isClientConnected tested on Windows Server only.
+
+{{{
+import time
+import logging
+
+import cherrypy
+
+def isClientConnected(asock=None):
+   if asock is None:
+      asock=cherrypy.request.rfile.rfile._sock
+   ret=0
+   atimeout=asock.gettimeout()
+   try:
+      asock.settimeout(0.001)
+      try:
+         adata=asock.recv(0)
+      except:
+         ret=1
+   finally:
+      asock.settimeout(atimeout)
+   return ret
+
+class Test:
+   rcnt=0
+   @cherrypy.expose
+   def index(self):
+      self.rcnt=self.rcnt+1
+      acnt=self.rcnt
+      for i in range(20):
+         time.sleep(1)
+         if isClientConnected():
+            cherrypy.log('timer: %d - %d'%(acnt,i),context='',severity=logging.DEBUG,traceback=False)
+         else:
+            cherrypy.log('timer: %d - disconnected'%(acnt,),context='',severity=logging.DEBUG,traceback=False)
+            return 'Disconnected - no need to wait more...'
+      return 'OK'
+
+if __name__ == '__main__':
+   cherrypy.config.update({
+      'server.socket_host':'0.0.0.0',
+      'server.socket_port':9092,
+   })
+   cherrypy.quickstart(Test())
+}}}
+

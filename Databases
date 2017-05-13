@@ -1,0 +1,199 @@
+== Connecting your CherryPy server to a database ==
+
+There are a number of python modules for most databases (MySql, PostgreSql, Oracle, Sybase, ...). To connect your CherryPy server to one of these databases, all you have to do is import the corresponding module in your code and use that module.
+
+Usually, a good place to connect to the database is before the HTTP server starts. Then you can just use that connection from within the methods used when rendering pages.
+
+However, some database modules are not thread-safe, so if you're running CherryPy in thread-pool mode, you can't share a database connection across multiple threads. Each thread has to have its own database connection. The way to have one database connection per thread is like this:
+
+ * Use cherrypy.engine.subscribe to tell CherryPy to call a function when each thread starts
+ * In that function, create a DB connection for this thread
+ * Store the DB connection in cherrypy.thread_data, which is a thread-specific container
+ * From your methods, use the DB connection that you stored in cherrypy.thread_data 
+
+The following example shows how to do this using the MySQLdb module (which doesn't seem to be thread-safe):
+
+{{{
+#!python
+import cherrypy 
+import MySQLdb 
+ 
+def connect(thread_index): 
+    # Create a connection and store it in the current thread 
+    cherrypy.thread_data.db = MySQLdb.connect('host', 'user', 'password', 'dbname') 
+ 
+# Tell CherryPy to call "connect" for each thread, when it starts up 
+cherrypy.engine.subscribe('start_thread', connect)
+
+ 
+class Root: 
+    def index(self): 
+        # Sample page that displays the number of records in "table" 
+        # Open a cursor, using the DB connection for the current thread 
+        c = cherrypy.thread_data.db.cursor() 
+        c.execute('select count(*) from table') 
+        res = c.fetchone() 
+        c.close() 
+        return "<html><body>Hello, you have %d records in your table</body></html>" % res[0] 
+    index.exposed = True 
+ 
+cherrypy.quickstart(Root())
+}}}
+
+Tip: By default, CherryPy's builtin HTTP server creates 10 threads. Because all 10 threads will be created almost at the same time, the function "connect" will be called 10 times very fast. This means that 10 connections will be opened almost at the same time. Some databases have a hard time keeping up with that, so you might want to put a try/except statement around the "connect" call, and if the call fails, just sleep for a while and try again ... Alternatively, you can use a line like "time.sleep(thread_index*0.5)" to make sure there is at least 0.5 sec between each database creation
+
+(Note: if you are using SQLObject it handles creating the individual connections for you, as well as the threadsafety issues)
+
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+||   || replace this || with this ||
+||3.0||cherrypy.engine.subscribe('start_thread', func)||cherrypy.engine.on_start_thread_list.append(func)||
+||2.2||cherrypy.engine.on_start_thread_list||cherrypy.server.on_start_thread_list||
+||2.1||on_start_thread_list||onStartThreadList||
+||   ||cherrypy.thread_data||cherrypy.threadData||
+||2.0||onStartThreadList||cpg.server.onStartThreadList||
+||   ||connect(threadIndex)||connect()||
+||   ||import cherrypy||from cherrypy import cpg as cherrypy||
+||   ||cherrypy.quickstart(Root())||cpg.root = Root()[[br]]cpg.server.start()||
+
+----
+gregjor said on 2007-01-07 15:07
+
+The application I'm working on uses PostegreSQL, and even though pgdb is minimally thread-safe you can't share connections across threads if you are using transactions. What I've done is create a wrapper around the database code that manages a pool of open connections using a Queue. When my module loads it allocates a queue to hold database connections:
+{{{
+#!python
+import Queue
+...
+dbq = Queue.Queue(10)
+}}}
+When a function or method needs a database connection it requests one from the queue. If the queue is empty a new connection is opened:
+{{{
+#!python
+def opendbconnection():
+    try:
+        conn = dbq.get_nowait()
+    except Queue.Empty:
+        try:
+            conn = pgdb.connect(host=xxx, user=xxx, password=xxx, database=xxx)
+        except:
+            # failed to open a database connection
+            raise
+
+    return conn
+}}}
+
+The calling function/method uses the database connection, then releases it when it's done. If the queue is full the connection is closed.
+
+{{{
+#!python
+def closedbconnection(conn):
+    try:
+        dbq.put_nowait(conn)
+    except Queue.Full:
+        conn.close
+}}}
+
+In my application this is done with decorators, so functions that need a database connection are decorated and an open database connection is passed to them. The decorator takes care of making sure the connection is released back to the queue.
+{{{
+#!python
+@usedb
+def somefn(db, ...):
+}}}
+
+Our application also has a timed thread that periodically goes through the queue and closes connections that haven't been used in a while, because the connections seem to go stale after a while for reasons I haven't tracked down. There's also a function called when CherryPy shuts down or restarts that closes all connections in the queue.
+
+We've used this fairly simple scheme in a couple of live applications with no problems. The beauty of the Queue is that it is a simple thread-safe mechanism for managing a pool of connections. If a connection is in the queue it's available for use, and connections are opened and added to the queue as needed.
+----
+
+WimS said on 2006-09-23 00:59
+
+SQLite (which is part of python 2.5) restricts use of a connection to the database to the thread that it was created in. I posted a recipe to use SQLite from cherrypy, without the need to connect to the database for every SQL-command.
+
+http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/496799
+
+It lets databaseconnections live in their own thread and queues are used to communicate with them.
+
+----
+
+Eli Courtwright said on 2006-08-26 13:56
+
+The problem with this approach is that the connections aren't closed when threads are shut down. In particular, they aren't closed when the server automatically restarts when a file is changed.
+
+And you can't just add a similar function to the on_thread_stop_list either, because that function won't be called by the thread being stopped and thus won't have access to the cherrypy.thread_data of that thread.
+
+Is there an elegant way around this? The only approach that I can figure out is to store the thread_index in cherrypy.thread_data and store each database connection in a dictionary, indexed by the thread_index. I can provide some code examples if this is unclear.
+
+----
+
+artifex said on 2006-05-08 11:27
+
+Psycopg is thread safe... so this is largely unneeded for psql.
+
+----
+
+Vishal Patel said on 2006-05-07 13:02
+
+It would be nice if someone could state the corresponding modules for Oracle, SQL Server 2000 / 5.0 / Express, and Postgresql.
+
+Cheers.
+
+----
+
+Rob Cowie said on 2006-03-14 13:12
+
+The (old) MySQLdb website suggests that it is in fact thread safe.
+
+This is still a useful example though!
+
+----
+
+I had problems using cherrypy.thread_data.db.cursor(): it is unreliable when running some heavy SQL queries. There were plenty of malloc errors (double free), dropped connections etc, even when running with 2 CherryPy threads against local database.
+
+May I suggest following code:
+
+{{{
+#!python
+import cherrypy
+import MySQLdb
+from DBUtils.PersistentDB import PersistentDB
+
+class HomePage:
+    @cherrypy.expose
+    def index(self):
+        sql = "select max(whatever) from bigtable;" #long running query
+        c = persDb.connection().cursor()
+        c.execute(sql)
+        res = c.fetchone()
+        c.close()
+        return ' '.join( ['<html>', repr(res), '</html>'] )
+
+
+cherrypy.tree.mount(HomePage())
+
+if __name__ == '__main__':  
+    persDb=PersistentDB(MySQLdb, 10000, host='localhost', db='db', passwd='****')
+
+    cherrypy.config.update({'server.thread_pool': 10})
+    cherrypy.server.quickstart()
+    cherrypy.engine.start()
+}}}
+
+''Alexandru Toth''
+
+----
+
+The above document may be a bit misleading as to when a database connection may be safely shared among threads. If you are using a thread safe database, such as psycopg2, then you can feel free to use a shared connection, but ''only if you __never__ use that connection to update the database''. I wonder how realistic this scenario is though. I cannot imagine a very fun website that doesn't allow the webserver to update the database at all.
+
+The problem is as follows. When the database is updated with a cursor, assuming a standard DB-API interface, a commit is required on the connection. If there are multiple threads using that connection, the commit will apply to all open cursors -- not just the one you want it to. This can lead to unexpected and hard to predict behavior.
+
+To be safe, there needs to be an independent connection per thread. This can be achieved in the following ways.
+
+ * (Best/Slowest to code) Use Connection Pools (like psycopg2.pool).
+ * (Good/Decent to code) One connection per thread as in the above article.
+ * (Ok/Quick to code) Use a per-cursor commit extension (like psycopg1 has with serialize=False in connect).
+
+''David Sankel''

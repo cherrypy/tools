@@ -1,0 +1,156 @@
+[http://www.bluehost.com/ Bluehost] provides shared hosting, on Linux/Apache.  The standard configuration only permits what Apache calls "dynamic server" FCGI, which appears to be the one in the FCGI spec.  The others, static and external, seem to be extensions to the spec, that do have some nice properties, but are not supported at Bluehost. [Possibly External would be supported, if you buy your own IP address -- then you are allowed to use ports, and run programs longer than a few minutes.]  There are limits to both CGI and FCGI processes at bluehost, and the limits seem to be based on total CPU consumption, rather than wall-clock time.  Doing the same things in CherryPy, and culminating in a huge file download, a CGI process will run about 10 minutes, and an FCGI process about 6 minutes.  A simpler CGI process that does minor security checking, and then starts the huge file download, will actually run significantly longer, with my largest file, it ran for nearly an hour.  So there is a significant cost to the startup and initialization of a CherryPy process with a complex configuration, which limits what you can do with it in the Bluehost environment.
+
+This writeup could use a reviewer that wants to deploy CherryPy at Bluehost.  That was my goal... and it is close to being achieved, once http://www.cherrypy.org/ticket/894 is resolved.  I had some false starts, but will try to prune what I did to what I think was necessary... 
+
+I'm not in to using old versions of software, when newer ones will do! I suppose you _could_ use the ancient version of Python preinstalled on Bluehost, if CherryPy and flup work with it.  But you will need the latest CherryPy with this bug fix, or else you will have to retrofit the patch to the older version.
+
+So here are the pieces:
+
+* Obtain SSH access to bluehost, or painstakingly do this stuff via cron jobs or CGI scripts.
+
+* Software to install:  Python 2.6, CherryPy 3.1.1 + patches, flup 1.0.1
+
+* Configurations to create:  .htaccess, cherryd
+
+Assuming you already have a CherryPy configuration and CherryPy application tested locally on your own box, with a configuration file called myconfig and an application file called mycherrysetup.py.  Of course, any paths in them should be tweaked to fit your Bluehost account.
+
+
+== Step 1 ==
+
+
+Bluehost cPanel has a widget for obtaining SSH access, but it has some obscure behaviors.  See the writeup at [http://nevcal.com/eclectic/bluessh/bluehost-ssh.html] for help with that, and for setting up PuTTY, so you can get to a shell script.
+
+
+== Step 2 ==
+
+
+To install Python 2.6 (or whatever version), login via SSH, and follow the instruction #1 at http://alextreppass.co.uk/blog/2008/11/14/getting-django-working-on-bluehost/ but substitute version 2.6 instead of 2.5.2.  Or substitute whatever version of Python you want.  I'll repeat his instructions here, editing for version 2.6, and dropping the Django stuff.
+
+Wonder over to the Python download page, and copy the URL to the compressed tarball for your version of choice (at the time of writing, I would recommend 2.5.2 final as this works well with Python mysqldb).
+
+SSH into your box, and make a ’src’ directory just inside your home dir.  You could paste the stuff below into a shell script.
+
+{{{
+mkdir src
+# Download and unzip the source:
+cd src
+pyv=2.6
+wget http://python.org/ftp/python/$pyv/Python-$pyv.tgz
+tar xzf Python-$pyv.tgz
+
+# Install Python to your home directory. We’re going to run everything out
+# of your home dir instead of using the default (older) Python that bluehost
+# have installed. To do this, we need to tweak the the install script slightly:
+
+cd Python-$pyv
+./configure --prefix="$HOME"
+make
+make install
+}}}
+
+
+Get your shell running the new Python. To do this, we need to edit your ‘.bash_profile’ located in your home directory. Open it up with vim:
+cd
+vim .bash_profile
+Use the arrow keys to move around, and press i to insert. Make sure the export statement looks as follows:
+export PATH=$HOME/bin:${PATH}
+Save by pressing Escape then type ‘:wq’ to write and quit the editor. If you make any mistakes, pressing Escape then typing ‘:q!’ will quit without saving.
+
+Reload your shell, and run the python interpreter:
+source ~/.bash_profile
+python
+If all goes well you should see “Python 2.6 at the top. Quit the interpreter with Ctrl+d.
+
+
+== Step 3 ==
+
+Download and install appropriate versions of flup and CherryPy.
+
+Note that presently, you need CherryPy 3.1.1 and any patches for  http://www.cherrypy.org/ticket/891 (to work with Python 2.6) & http://www.cherrypy.org/ticket/894 (to work with Bluehost/Apache/dynamic FCGI).  Hopefully, the CherryPy trunk, or a future versions 3.1.2 will be available soon, containing all the patches, and you can use that.  [Sadly, because my own patch worked, I didn't test Robert's, and it doesn't work in 3.2.0rc1, so probably not in 3.1.2 either.  I've updated ticket 894 to contain a patch for 3.2.0rc1 that does work, although I don't understand the code that I commented out.]
+
+
+{{{
+flupv=1.0.1
+cd ~
+mkdir src
+cd ~/src
+wget http://www.saddi.com/software/flup/dist/flup-$flupv.tar.gz
+tar -xzf flup-$flupv.tar.gz
+cd flup-$flupv
+python setup.py install
+
+chv=3.1.1
+cd ~
+mkdir src
+cd ~/src
+wget http://download.cherrypy.org/cherrypy/$chv/CherryPy-$chv.tar.gz
+tar -xzf CherryPy-$chv.tar.gz
+cd CherryPy-$chv
+python setup.py install
+}}}
+
+== Step 4 ==
+
+.htaccess configuration.  Bluehost offered the following help for FCGI configuration:
+
+{{{
+For fcgi files to work on Bluehost you just need to make sure that
+
+1) apache is using the right handler (AddHandler fastcgi-script .fcgi)
+2) that the script has 755 permissions
+3) that the script has the right shebang at the top of the file
+   (/usr/bin/sh , /usr/bin/perl etc..)
+}}}
+
+To that I add:  (don't use /usr/bin/env in the shebang, Apache has a different environment than ssh)
+
+The .htaccess file must be in or below the public_html directory, and the cgi-bin referred to must be in the public_html directory, or the corresponding subdirectory for the subdomain or add-on domain.  I used .htaccess and cgi-bin in the public_html, and the paths in the examples reflect that.
+
+So in .htaccess, I have the following lines (for testing):
+
+{{{
+AddHandler fcgid-script .fcgi
+RewriteRule ^(errdoc.cgi(.*))$ /cgi-bin/$1 [last]
+RewriteRule ^(cgi-bin/cherryd.fcgi/.*)$ - [last]
+RewriteRule ^cp/(.*)$ /cgi-bin/cherryd.fcgi/$1 [last]
+# RewriteRule ^(.*)$ /cgi-bin/cherryd.fcgi/$1 [last]
+}}}
+
+The first line corresponds to bluehost's step 1.  
+
+The second line is to allow my error-document-generating script to be served by Apache, without use of CherryPy.  You could have different or more files here as needed, or include any static files you do not want served by CherryPy.  Or you could be more restrictive which URLs you want to have served by CherryPy in the subsequent lines.  This depends on whether you want CherryPy to do a small part, or the lion's share of your web serving.  Apache is good at serving static files, if you have a bunch, and if you can keep write one or a few regular expressions that separate the URLs for static files from the URLs for CherryPy to process.  This example shows how to migrate from "all Apache" to "all CherryPy" by flipping a switch.
+
+The third line causes any URL that are are already explicitly invoking cherrypy to be resolved without going through the rest of my (complex) .htaccess. [If you go the replacement route, any fancy stuff you are presently doing in Apache and CGI will have to be rewritten using CherryPy.  I'm closing in on that!]
+
+The fourth line is just a shorthand for testing.  By prefixing the URL path with "/cp" I can have both the Apache configuration running live, and the CherryPy configuration behind it, for testing.  Note that any absolute URLs referenced in static pages will be served by Apache, even if the original was served by CherryPy.  For production, this line could be commented out.
+
+The final line, commented out, redirects ALL other URLs to CherryPy.  Once I have all the desired functionality implemented in CherryPy, I can flip this switch (uncomment the line), and the site will be live with CherryPy.
+
+
+== Step 5 ==
+
+Create an .fcgi file so Apache will start the FCGI process.
+
+In the CherryPy distribution, there is a file cherryd, which allows/demonstrates starting and configuring a CherryPy server daemon (I think that is where the "d" comes from in the name) in a variety of environments.
+
+Since cherryd starts with
+#! /usr/bin/env python
+
+and that won't work when launched from Apache, you need to do one of the following:
+
+A) use a shell script called /cgi-bin/cherryd.fcgi to set up a path (to give /usr/bin/env something to work with) and then invoke cherryd
+
+B) invoke cherryd with an explicit python, using cherryd as a parameter, something like the following, but change /home/myaccount to your home directory for your account.  This assumes your CherryPy application is in mycherrysetup.py in the same directory as cherryd.  Again, the script should probably be named /cgi-bin/cherryd.fcgi
+
+{{{
+/usr/bin/sh
+/home/myaccount/bin/python /home/myaccount/src/CherryPy-3.1.1/cherrypy/cherryd -c myconfig -d -f -i mycherrysetup
+}}}
+
+C) edit cherryd and put in a hard-coded path to the python you want.  Rename cherryd to /cgi-bin/cherryd.fcgi.
+
+Thinking that fewer steps are faster, I opted for the latter, and first copied cherryd to /cgi-bin/cherryd.fcgi, changed the shebang line to /home/myaccount/bin/python, and ripped out the parameter parsing at the bottom (because Apache isn't going to pass parameters either).
+
+I replaced the parameter parsing with one line:
+
+   start( configfiles=["myconfig"], daemonize=False, fastcgi=True, imports=["mycherrysetup"])

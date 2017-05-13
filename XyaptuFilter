@@ -1,0 +1,341 @@
+= xyaptufilter =
+
+This filter uses the [http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/162292 xyaptu recipe] and is inspired on [http://www.pythonweb.org/projects/webmodules/doc/0.4.2/lib/example-file-web-template-xyaptu.html python web's xyaptu templating]. 
+
+== History ==
+Note: The docs here are not fully up to date. [[br]]
+That is: not every option is fully explained, but the documentation still aplies. 
+
+=== 1.0.0 - 0.1.8 : what happened? ===
+The major jump from 0.1.8 to 1.0.0 was because it now works under CherryPy 2.1. [[br]]
+Although the !XyaptuFilter doesn't support cherrypy's nice new config features, and it's not a standard filter as well, old filter configuration is still possible in cherrypy 2.1, and allows for enough flexibility.
+
+If you're using a cherrypy version prior to 2.1, use version 0.1.8 of the filter. 
+
+{{{
+#!python
+######################################################################
+## History:
+##
+## 1.0.0   : 2005-08-21 CherryPy 2.1 ready! :) Yeeehaaaaa! thanks to 
+##           fumanchu on irc for the online help!(remco)
+## 0.1.8   : 2005-03-03 Bugfixed the footer having an invalid DNS. (remco)
+## 0.1.7   : 2005-02-03 added cpg.response.xyaptuTemplate.noHeader and
+##           .noFooter boolean checking support. If set to true, the
+##           header/footer will not be added to the output. (remco)
+## 0.1.6   : 2005-02-03 added a dnsCallback to the root filter constructor.
+##           renamed the template parameters to resemble callbacks, instead
+##           of templates. (remco)
+## 0.1.5   : 2005-02-03 added handling for a parameterlist, from the __init__
+##           of XyaptuTemplating. (remco)
+## 0.1.4   : 2005-02-02 the headercallback is now called _after_ the request
+##           object has been executed, but _before_ any of the results are
+##           parsed. This way it's possible to handle sessions for the header
+##           callback. (which was my initial intent) (remco)
+##           cpg.response.xyaptuTemplate is provided before the mapped object
+##           is called though. The header will use this DNS as well. This should
+##           still provide support for a start DNS, set in the headercallback.
+## 0.1.3   : 2005-02-01 Changed callbacks and registration: tuple should now
+##           be returned by the callback, instead of in the registration.(remco)
+## 0.1.2   : 2004-12-08 Allow for header and footer with callbacks (remco)
+## 0.1.1   : 2004-12-07 now allows sub templates wich don't interfere
+##           with other templates returned in the same 'stream' (remco)
+## 0.1.0   : 2004-12-07 it works! (remco boerma)
+## 0.0.0   : 2004-12-07 initial alpha (remco boerma)
+######################################################################
+}}}
+
+== A quick note on yielding ==
+In contrast to what is explained on the [http://www.cherrypy.org/wiki/ReturnVsYield ReturnVsYield] page, the XyaptuFilter "consumes" your generator, before anything is sent to the client.. This might slow things down a bit for the end user, as your entire page is generated first. On the other hand, with the XyaptuFilter, '''the problems noted on the [http://www.cherrypy.org/wiki/ReturnVsYield ReturnVsYield] page do not apply'''; but you can still use yield construct - and fully exploit it! [[br]]Read on!
+
+== Howto ==
+Download the attachment, and unpack it in your {{{cherrypy/lib/filter}}} directory. 
+
+Next you'll have to add the filter to you _cpFilterList:
+{{{
+#!python
+import cherrypy.lib.filter.xyaptufilter as xyaptufilter
+class XyaptuTest:
+    _cpFilterList = [xyaptufilter.XyaptuFilter()]
+    # note: in later versions, you can add parameters for callbacks.. 
+    # callbacks are provided for the getting the base DNS, header and footer html 
+    # production. Check the source files for more info, and write dox over here
+    # if you can...
+}}}
+
+Now we can insert a method, and nothing changes so far. This is the regular CherryPy2 way.
+{{{
+#!python
+    def testString(self):
+        return "A string"
+    testString.exposed = True
+}}}
+
+Making use of the filter, in a 'generator filter' way we could do the following (as the xyaptufilter behaves just like the generator filter):
+{{{
+#!python
+    def testGenerator(self):
+        yield "some data"
+        yield 'some other data'
+    testGenerator.exposed= True
+}}}
+
+But of course we want to use a templating filter for templating. So let's include some data:
+{{{
+#!python
+    def testSimpleTemplate(self):
+        yield {'bla':'BLA'}
+        yield "$bla &lt;- should be uppercase..."
+    testSimpleTemplate.exposed=True
+}}}
+this would result in:
+{{{
+BLA <- sould be uppercase
+}}}
+
+But what if the content of the template is on disk? Here we will create a list of all the methods exposed in the class, with some templating around it.. We'll discuss the subtemplate a bit later. Here's the source (the readme is a regular text file, and doesn't use templating). 
+{{{
+#!python
+    def testCompoundTemplate(self):
+        ## will use 'BLA', and is _not_ a subtemplate
+        yield ({'bla':'BLA'},"--$bla-- should be uppercase...") 
+        yield "this sould contain the readme<pre>"
+        ## this bla is never used, it's part of a subtemplate
+        yield ("readme.txt",{'bla':'this string may never show on the user screen'}) 
+        yield "</pre>"
+        ## so bla should still be 'BLA'
+        yield "now we will test: bla now is: <b>'$bla'</b><br/>" 
+        ## and again a subtemplate, with the 'copmpletely different' bla as contents for bla
+        yield "with a seperate template: <b>'$bla'</b><br/>", {'bla':'completely different'} 
+        ## but bla will still be 'BLA' here,
+        yield "now we will test: bla now is: <b>'$bla'</b><br/>" 
+}}}
+Take a look at the comments and think about them for a while :)[[br]]
+If we'd run this code, the contents of the readme.txt would be displayed (along with all the other stuff). But the file has to be in the current working directory. You can provide full, or relative paths. Fully depending on the python distribution used as the filter does not do anything special with a path. (at least, not at this moment that is)
+
+Here is another example:
+{{{
+#!python
+    def testFile(self):
+        import time
+        yield {'time':time}
+        items = []
+        for itemName,item in vars(self.__class__).items():
+            if getattr(item,'exposed',False):
+                items.append((itemName,item))
+        yield {'items':items}
+        yield 'xyaptuTest.tmpl'
+    testFile.exposed = True
+}}}
+and the xyaptuTest.tmp file:
+{{{
+#!text/html
+<html>
+  <body>
+  Current time: ${time.ctime()}<br>
+  now for a list:<br>
+  <py-open code="for name,item in items:"/>
+    <a href="$name">$name</a><br/>
+  <py-close/>
+  </body>
+</html>
+}}}
+This example makes something very clear: you can build your Document Name Space using multple yielded dictionaries. The same goes for the templates. Template texts are concatenated, and files read are concatenated as well (as if you would yield the entire contents of the file). There is one dictionary per request, which is updated with all the dictionaries being fed to it, using the yield. [[br]]
+Mind you vars() can be used for a dictionary as well. 
+The result of the tho above are here:
+{{{
+#!text/html
+<html>
+  <body>
+  Current time: Tue Dec 07 20:25:34 2004<br>
+
+  now for a list:<br>
+  
+
+    <a href="index">index</a><br/>
+  
+
+    <a href="testGenerator">testGenerator</a><br/>
+  
+
+    <a href="testTuple">testTuple</a><br/>
+  
+
+    <a href="testString">testString</a><br/>
+  
+
+    <a href="testCompoundTemplate">testCompoundTemplate</a><br/>
+
+  
+
+    <a href="testSimpleTemplate">testSimpleTemplate</a><br/>
+  
+
+    <a href="testFile">testFile</a><br/>
+  </body>
+</html>
+}}}
+
+
+== Subtemplates ==
+
+It's possible to use subtemplates (as we have seen with the 'bla' example before). Subtemplate use the Document Name Space built upto that moment, plus a dictionary that has to go with the template. [[br]]
+It's simplest to use a subtemplate in the following fashion:
+{{{
+#!python
+        yield "templateFilenameOrString", extraOrSpecialDocumentNameSpace
+}}}
+In that order, and prefereable using a yield. It's not possible to use it with 2 yields, or more parameters that are yielded. So it's two yielded values, in this order!. If the subtemplate is parsed, you can think of it as:
+{{{
+#!python
+        yield "parsed and filled template text"
+}}}
+Note here: There's no special dictionary! As the extraOrSpecialDocumentNameSpace will be appended to the Document Name Space, and will be forgotten as soon as the subtemplate is baked.. . This has a few advantages:
+
+ * override keys in the DNS (Document Name Space) for a specific subtemplate
+ * use shared template DNS through yielding it first (in one or more yields)
+ * specifics you have for one subtemplate aren't bothering other (sub)templates
+
+
+== Other features not explained here == 
+
+ * The filter can also accept file like objects as a template, and it will read the "file"
+ * using lists with sublists to simulate a generator using subtemplates
+ * Callbacks for DNS, header and footer code...[[br]]Sample:
+{{{
+#!python
+class Page(object):
+    """Provide the base page functionality, like headers and footers.
+    the page object is available using cpg.root.page, set by root.__init__().
+    """
+    def __init__(self):
+        # PageHeader and PageFooter are objects that 
+        # support the __call__ method, and construct a valid
+        # header and footer based on session parameters, 
+        # requested url, state of the server etc. etc. etc.
+        # of course, you can do this in the callback functions
+        # provided here as well.. just imagine, these functions
+        # returning 
+        self.header = PageHeader()
+        self.footer = PageFooter()
+
+    def headerCallback(self):
+        """Called by the xyaptufilter.
+        @returns: tuple: (template,dns)
+        """
+        return self.header()
+
+    def footerCallback(self):
+        """Called by the xyaptufilter.
+        @returns: tuple: (template,dns)
+        """
+        return self.footer()
+
+    def dnsCallback(self):
+        """Called by the xyaptufilter.
+        @returns: dns (a dictionary)
+        """
+        # in my code, it's based on a session parameter that
+        # stores the user selected (or default) language code
+        # so i have my translation done using the DNS...
+        return self.header.startDocumentNameSpace()
+
+class Root(object):
+    def __init__(self):
+        self.page = Page()
+        self._cpFilterList = [xyaptu.XyaptuFilter(self.page.headerCallback,
+                                                  self.page.footerCallback,
+                                                  self.page.dnsCallback)]
+   
+}}}
+
+
+= On the templating itself =
+  ''The following text is from the [http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/162292 xyaptu recipe] but wikified a bit.'' 
+
+== xyaptu: ==
+  ''Xyaptu builts on Alex Martelli's generic and elegant module, YAPTU (Yet Another Python Template Utility), to instantiate XML/HTML document templates that include python code for presentational purposes. The goal is _not_ to be able to embed program logic in a document template. This is counter productive if a separation of content and logic is desired. The goal _is_ to be able to prepare arbitrarily complex presentation templates, while offering a simple and open-ended means to hook in application data. A page template may therefore contain anything that targeted clients will accept, with the addition of five XML tags and one 'pcdata' expression token, as mark-up for the python code that defines the coupling between the presentation to the application data.''
+
+== xyaptu documentation: ==
+
+Xyaptu is python-centric, in the sense that the XML tags offered reflect python constructs (such as python expressions, statements, opening and closing blocks) and not particularly constructs typically identified in web page templates. The advantage is simplicity, while still keeping all the options open for the HTML or XML document designer.
+
+=== The primary requirements of xyaptu are: ===
+
+ 1. expression evaluation, e.g. variable substitutions, function calls
+ 1. loop over, and format, a python data sequence
+ 1. xyaptu mark-up must pass through an XML parser, to naturally allow using XML tools of choice, such as XSLT, for generation of page templates
+ 1. but, since HTML is *not* XML, page templates need not otherwise be XML compliant. In some future time xhtml may be the norm for web pages, but as yet eb design tools currently in wide use do not produce XML compliant output. Thus, non-XML page templates, such as HTML, must still be considered as valid input. (For the implementation, this implies that xyaptu tags be matched using regular expressions, and not by parsing HTML or XML.)
+ 1. simplicity of use, with minimum learning and runtime overhead
+ 1. separation of presentation and application logic
+
+=== Tags: ===
+There are only 5 XML tags, to handle python statements (expression, line, block open, block continuation clause, block close). Python expressions are also mapped to a 'pcdata' token, to allow the use of python expressions also in places where tags are not allowed, i.e. in attribute values. XML special characters (< > & ") must be encoded (&lt; &gt; &amp; &quot;) to be used in python code. This, unfortunately, is unavoidable.
+
+Xyaptu may be run in debug mode, and debug output may be sent to either the specified output filelike object, or to any writable filelike object. Please see the module self-test for sample code. When in debug mode, the intermediate format of the template is also copied to the debug stream (done in copier._x2y_translate).[[br]]
+As a default behaviour, expressions that do not evaluate are written out (surrounded with {{{'***! '}}} and {{{' !***'}}}) to the specified output stream, and, if in debug mode, an error message is written out to the debug stream (which defaults to the output stream). To change this behaviour (and that of debug in general) you would need to override the methods _handleBadExps and _preprocessDbg in a sublcassed xyaptu.
+
+=== Mark-up syntax: ===
+A template may contain anything acceptable to targeted clients will accept, plus the following xyaptu tags and 1 expression, to mark-up python expressions and statements:
+
+{{{
+#!text/html
+<py-expr code="pvkey" />               -- expression
+<py-line code="pvkeys=pVars.keys()" /> -- line statement
+<py-open code="if inSession:"/>        -- block open
+<py-clause code="else:"/>              -- block continuation clause
+<py-close/>                            -- block close
+$pyvar | ${pyexpr}                     -- for simple interpolation of python 
+                                       -- variables, expressions, or function calls 
+                                       -- (the second syntax option is for expressions 
+                                       -- that may contain spaces or other characters 
+                                       -- not allowed in variable names)
+
+}}}
+
+
+The advantage of pcdata tokens over XML tags is that they may be used anywhere, including within XML attribute values, e.g.:
+{{{
+#!text/html
+<a href="http://host/$language/topic">topic</a>
+}}}
+
+=== Alternate mark-up tag syntax: ===
+Because most web browsers by default do not display attribute values, but they do show element values, as a convenience for those who like to preview page templates in web browsers, an alternate tag syntax is provided. The five tag examples above therefore become:
+
+{{{
+#!text/html
+<py-expr>pvkey</py-expr>               -- expression
+<py-line>pvkeys=pVars.keys()</py-line> -- line statement
+<py-open>if inSession:</py-open>       -- block open
+<py-clause>else:</py-clause>           -- block continuation clause
+<py-close># close</py-close>           -- block close (content is ignored)
+}}}
+Note that, in the case that a "code" attribute is specified, then _that_ code is executed, and element content, if any, is ignored.
+
+
+== Usage: ==
+ 1. A runtime application prepares the document namespace in the form of a python dictionary.
+ 1. An xyaptu xcopier is initialised with this dictionary: [[br]]
+    {{{
+    #!python
+    from xyaptu import xcopier
+    xcp = xcopier(DNS)
+    }}}
+ 1. The xcopy method of this xcopier instance may be called with either the name of a page template file, or a filehandle, to instantiate the page template within this namespace:[[br]]
+    {{{
+    #!python
+    xcp.xcopy( templateFileName | templateFileHandle )
+    }}}
+    For page templates available as strings in memory, use StringIO:
+    {{{
+    #!python
+    from cStringIO import StringIO
+    pageTemplateStream = StringIO(pageTemplateString)
+    xcp.xcopy(pageTemplateStream)
+    }}}
+ 1. Output is by default sent to sys.stdout. A different output stream may be specified at initialisation, as the value of an 'ouf' parameter:[[br]] {{{xcp = xcopier(DNS, ouf=myOutputStream)}}}
+ 1. Debugging may be turned on by initialising xyaptu with a {{{'dbg=1'}}} switch. Debug output is sent to the specified output stream unless a separate stream is specified by the dbgOuf parameter, also at initialisation time.
+
+For a full working example, see the module self-test source.    
+

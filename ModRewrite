@@ -1,0 +1,90 @@
+[[PageOutline]]
+= Running CherryPy behind Apache using mod_rewrite =
+
+This is a HOWTO. See BehindApache for a higher-level discussion.
+
+Here are some myths about running CherryPy behind mod_rewrite:
+
+=== Myth 1: using mod_rewrite will make my site slower ===
+
+If you're talking about raw HTTP speed then yes, using mod_rewrite does add a little bit of overhead. On my current laptop, a benchmark of CherryPy exposed gave 460 requests/second (2.2ms/req), and a benchmark of CherryPy running behind Apache with mod_rewrite gave 320 requests/second (3.1ms/req). This means that mod_rewrite adds 0.9ms per request... But for a typical web app, a page will take at least several tens or hundreds of milliseconds to build. So you can see that these extra 0.9ms won't really matter much!
+
+Also, keep in mind that Apache will serve static files directly, which will be faster than serving them from CherryPy.
+
+=== Myth 2: I will lose some data about the client if I use mod_rewrite ===
+
+When using mod_rewrite, requests to CherryPy will look like they're coming from the local Apache server (the "Host" header will be "localhost:port" and the client IP address will be 127.0.0.1). However, if you use Apache2, it will pass to you the original "Host" header in the "X-Forwarded-Host" header. Also, it will pass to you the IP address of the remote client in the "X-Forwarded-For" header. So you still have access to all the data about the original request.
+
+
+== Configuring Apache ==
+
+Let's assume that CP application is listening on port 8000. The thing I did was add to the apache's config file (usually /etc/apache/httpd.conf or /etc/httpd/conf/httpd.conf) the following lines (mod_rewrite works as well with .htaccess if you cannot edit your httpd.conf) :
+
+{{{
+RewriteEngine on
+RewriteRule ^(.*) http://127.0.0.1:8000$1 [proxy]
+}}}
+
+in the proper !VirtualHost directive. Be careful with Directory directives because Apache will strip the directory prefix for pattern matching and not add it back. So the above configuration would result in Apache trying to proxy {{{http://127.0.0.1:8000page}}} instead of {{{http://127.0.0.1:8000/page}}}. You would remedy this situation by adding a '/' or whatever prefix you need into the rewrite rule. For example:
+
+{{{
+RewriteEngine on
+RewriteRule ^(.*) http://127.0.0.1:8000/$1 [proxy]
+}}}
+
+If you want to configure Apache to serve all your static files directly (and thus free CherryPy from this task), use the a configuration like this:
+
+{{{
+RewriteEngine on
+RewriteRule ^/static/(.*) /home/user/files/static/$1 [last]
+RewriteRule ^(.*) http://127.0.0.1:8000$1 [proxy]
+}}}
+
+If you don't want to (or cannot) use Apache's Virtual Hosts, just add one line after !RewriteEngine. For example, you want to map the requests to the www.example.info host to your !CherryPy, so you get:
+
+{{{
+RewriteEngine on
+RewriteCond %{HTTP_HOST} www\.example\.info
+RewriteRule ^(.*) http://127.0.0.1:8000$1 [proxy]
+}}}
+
+If your application is not running and a user tries to access it, Apache will give him 502 Proxy Error. So, there's an easy way to start the application then: just add the !ErrorDocument directive that runs the CGI script starting your application and redirecting to it. You will also need to disable the mod_rewrite for that script (otherwise apache would try to get the CGI script from your CP application, and get another 502 error). So, I added 2 more lines to my configuration, and it now looks like this:
+
+{{{
+RewriteEngine on
+RewriteCond  %{SCRIPT_FILENAME} !autostart\.cgi$
+RewriteCond %{HTTP_HOST} www\.example\.info
+RewriteRule ^(.*) http://127.0.0.1:8000/$1 [proxy]
+ErrorDocument 502 /cgi-bin/autostart.cgi
+}}}
+
+The autostart.cgi file is a 5-line python script:
+{{{
+#!python
+#!/usr/local/bin/python
+print "Content-type: text/html\r\n"
+print """<html><head><META HTTP-EQUIV="Refresh" CONTENT="1; URL=/"></head><body>Restarting site ...<a href="/">click here<a></body></html>"""
+import os
+os.setpgid(os.getpid(), 0)
+os.system('/usr/local/bin/python2.4 webserver.py &')
+}}}
+
+If you get ''"Forbidden - You don't have permission to access / on this server"'' errors, try enabling the proxy module.
+
+Note: The "os.setpgid(os.getpid(), 0)" line seems to prevent Apache from killing the CP process after a period of inactivity (many thanks to Matt Lewis for this trick).
+
+
+== Beware the encoding bug ==
+
+URL's that are requested via HTTP must be escaped (%xx-encoded) before they are sent, but Apache2's mod_rewrite unescapes path information which may generate invalid HTTP requests. In particular, spaces (which should be escaped as "%20") are not. If CherryPy recieves a request with a raw space character in the URL, it chokes, because spaces are used to delimit the three parts of a request line (like "GET /path/to%20my/page HTTP/1.1"). A workaround to this is to add the following to your apache configuration:
+
+{{{
+# this cannot be on .htaccess (only on httpd.conf)
+RewriteMap escape int:escape 
+
+#and when writing RewriteRule:
+RewriteRule ^(.*)$ http://localhost:6674/${escape:$1} [proxy]
+#(i.e., use ${escape:$1} instead of $1)
+}}}
+
+AFAIK, this is a bug on mod_rewrite/apache since I've researched HTTP/1.1 and URI RFC's and they all state that there must be only 2 spaces on the HTTP request line, i.e., CherryPy is parsing the request line correctly and Apache is sending invalid HTTP requests. Either way, I think this workaround will help people using CherryPy under apache's modrewrite. I've only tested this on Apache2, I don't know if RewriteMap int:escape exists on older versions of mod_rewrite. But the Apache people seems to be aware of this bug: http://issues.apache.org/bugzilla/show_bug.cgi?id=11265

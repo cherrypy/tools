@@ -1,0 +1,22 @@
+Here is a screencast showing how easy it is to run CherryPy from the python prompt and interact with it.
+
+The concepts in this simple demo can be used to do real interactive debugging. You could turn off the autoreloader and logging to screen in an app you are developing and run it like {{{python -i start_your_app.py}}} or {{{ipython start_your_app.py}}}. You are then inside the running application, and you can make requests to it from a browser and poke around inside using the interactive interpreter.
+
+We think it showcases the pythonic nature of CherryPy.
+
+[http://tools.cherrypy.org/attachment/wiki/InteractiveInterpreter/cherrypy_interactive.swf?format=raw RUN SCREENCAST]
+
+----
+
+edasx said on 2006-10-19 11:30
+
+Is there some way to actually dive into already running process of cherrypy? Via console? Thanx.
+
+----
+
+edasx, you can try http://projects.amor.org/misc/wiki/HTTPREPL
+
+''fumanchu''
+
+
+

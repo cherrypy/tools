@@ -1,0 +1,49 @@
+Setting mimetypes is normally done with cherrypy.response.headers.
+
+{{{
+#!python
+import cherrypy
+
+def hello(self):
+    cherrypy.response.headers['Content-Type']= 'text/xml'
+    return "<hello world />"
+}}}
+
+CherryPy 3 has a builtin Tool for this purpose:
+
+{{{
+#!python
+@cherrypy.tools.response_headers([('Content-Type', 'text/xml')])
+def hello(self):
+    return "<hello world />"
+}}}
+
+But if you like you can do it with custom decorators too:
+
+{{{
+#!python
+import cherrypy
+
+def mimetype(type):
+    def decorate(func):
+        def wrapper(*args, **kwargs):
+            cherrypy.response.headers['Content-Type'] = type
+            return func(*args, **kwargs)
+        return wrapper
+    return decorate
+
+class MyClass:
+    
+    @mimetype("text/xml")
+    def hello(self):
+        return "<helloWorld />"
+}}}
+
+{{{
+#!html
+<h2 class='compatibility'>Older versions</h2>
+}}}
+
+||   || replace this || with this ||
+||2.1||headers||headerMap||
+||2.0||import cherrypy||from cherrypy import cpg as cherrypy||

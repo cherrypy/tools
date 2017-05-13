@@ -1,0 +1,99 @@
+== CAS Authentication ==
+
+
+This is a simple module that allows the usage of CAS Authentication for CAS.  The module sets tickets and validates user names using sessions.  Included is the CASAuth Module and an example of the module's implementation.
+
+This information and further CAS information can also be found at [https://wiki.jasig.org/display/CASC/CherryPy+CAS+Client Jasig's website].
+
+
+{{{
+import cherrypy
+import xml.etree.ElementTree
+import urllib
+
+def CASAuth(cas_server,service_url):
+    if cherrypy.session.get('user'):
+        #DEBUG: user is validated by existing session cookie
+        cherrypy.session['validated_by'] = "session attribute"
+        pass
+    
+    elif 'ticket' in cherrypy.request.params:
+        #need to validate ticket
+        ticket = cherrypy.request.params['ticket']
+        
+        #generate URL for ticket validation 
+        cas_validate = cas_server + "/cas/serviceValidate?ticket=" + ticket + "&service=" + service_url
+        f_xml_assertion = urllib.urlopen(cas_validate)
+        if not f_xml_assertion:
+            raise cherrypy.HTTPError(401, 'Unable to authenticate: trouble retrieving assertion from CAS to validate ticket.')
+
+        #parse CAS XML assertion into a ElementTree
+        assertion_tree = xml.etree.ElementTree.parse(f_xml_assertion)
+        if not assertion_tree:
+            raise cherrypy.HTTPError(401, 'Unable to authenticate: trouble parsing XML assertion.')
+
+        #find <cas:user> in ElementTree
+        for e in assertion_tree.iter():
+            #print "DEBUG: Found tag '%s'" % e.tag
+            if e.tag != "{http://www.yale.edu/tp/cas}user":
+                continue
+            user_name = e.text
+        if not user_name:
+            #couldn't find <cas:user> in the tree
+            raise cherrypy.HTTPError(401, 'Unable to validate ticket: could not locate cas:user element.')
+    
+        #add username to session
+        cherrypy.session['user'] = user_name
+        
+
+        #DEBUG: user is validated by initial ticket instance
+        cherrypy.session['validated_by'] = "ticket"
+        
+        #option a
+        #leaves ticket=..... param in browser's URL
+        #del cherrypy.request.params['ticket']
+
+        #option b
+        #redirect to a clean service URL (without ticket=... param)
+        #note: may cause usability issues if accessing a URL other than
+        #initial Service URL with an expired session
+        raise cherrypy.HTTPRedirect(service_url)
+    
+    else:
+        #no existing session; no ticket to validate
+        #redirect to CAS to retrieve new ticket
+        raise cherrypy.HTTPRedirect(cas_server + "/cas/login?service=" + service_url)
+}}}
+
+HelloCAS implements the above module.
+
+
+{{{
+import cherrypy
+import CASAuth
+
+#create test index page
+class HelloCAS(object):
+    def index(self):
+        return "%s is logged in, validated by %s" % (cherrypy.session.get('user'), cherrypy.session.get('validated_by'))
+
+    index.exposed = True                
+
+#create a custom cherrypy tool that will authenticate all page handlers using CAS
+cherrypy.tools.CASAuth = cherrypy.Tool('before_handler', CASAuth.CASAuth)
+
+#populate your cas server and service URLs
+CAS_SERVER  = "https://yourcasserver.example.edu"
+SERVICE_URL = "http://localhost:8080/"
+
+cherrypy.config.update({
+                        #'server.socket_host': '0.0.0.0', #if you are running this on ec2, uncomment
+                        #'server.socket_port': 8080,      #so you can access by host address
+                        'tools.sessions.on': True,
+                        'tools.CASAuth.on': True,
+                        'tools.CASAuth.cas_server': CAS_SERVER,
+                        'tools.CASAuth.service_url': SERVICE_URL})
+
+cherrypy.quickstart(HelloCAS())
+
+}}}

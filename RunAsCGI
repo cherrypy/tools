@@ -1,0 +1,186 @@
+== CherryPy as a CGI application ==
+
+CherryPy works much better when it runs for a long time unlike CGI scripts 
+which have a very short life time.
+    
+However sometimes there are occasions where CGI is the only way to deploy and 
+once you've used CherryPy you want to stick with it. Why go back to "import cgi"
+when there is CherryPy?
+
+Here is a hack to enable VERY SIMPLE cherry py scripts to be ran as a CGI 
+script. It is not going to work for any complex scripts that leverage CherryPy
+features!
+
+The example HelloWorld from http://www.cherrypy.org/wiki/CherryPyTutorial
+
+{{{
+#!python
+from cherrypy import cpg
+
+class HelloWorld:
+    def index(self):
+        return "Hello world!"
+    index.exposed = True
+
+cpg.root = HelloWorld()
+cpg.server.start()
+}}}
+
+Becomes:
+
+{{{
+#!python
+from cherrypy_cgi import cherrypy_from_cgi
+
+class HelloWorld:
+    def index(self):
+        return "Hello world!"
+    index.exposed = True
+
+cherrypy_from_cgi(cherry_root=HelloWorld)
+}}}
+
+Assuming the script is called "helloworld" and dropped into the cgi-bin 
+directory for the web server this is accessible either via:
+
+    http://machine/cgi-bin/helloworld
+Or
+    http://machine/cgi-bin/helloworld/
+
+The first one will redirect to the 2nd one. For this type of CGI this is not 
+ideal but for scripts that take GET parameters this is required to ensure the 
+parameters get passed correctly. It is possible to allow the first URL form 
+(with the trailing slash omitted) to call the CGI directly without the 
+redirect, if you need this (and don't care about GET parameters) then 
+update cherrypy_cgi.py to change the line that reads:
+
+{{{
+    cgi_function_name="_missing_slash"  # default function to workaround missing '/'
+}}}
+
+And replace it with:
+{{{
+    cgi_function_name=""  # or '/'
+}}}
+Problems/limitations:
+
+
+ * the redirect is a bit of a hack :-(
+ * errors (python errors) are simply not reported well/at all and I'm not sure why. cgitb doesn't appear to be doing the trick in all circumstances :-(
+ * Not future proof; I fully expect CherryPy 2.1 to break this hack
+    
+I'm using this on sourceforge.net where I have CGI access but no control over 
+the web server (I don't even get to see the error logs from CGI). I really like
+sourceforge and you can't complain about the price ;-)
+
+Code/suggestions/feedback welcome. Hopefully it is useful to someone else
+(probably a very small subset of CherryPy users).
+
+Most of the credit/blame belongs to Jared (ninebelow) from the following post:
+
+http://groups-beta.google.com/group/cherrypy-users/msg/072a8b36361a0774?dmode=source
+
+Requirements:
+
+http://www.CherryPy.org
+{{{
+    import cherrypy
+    cherrypy.__version__ == '2.0.0'
+    assert(cherrypy.__version__ == '2.0.0')
+}}}
+
+
+http://www.pythonweb.org/projects/webmodules
+{{{
+    import web.wsgi
+    assert(web.version == '0.5.3')
+}}}
+
+ * cherrypy_cgi.py --  mini library
+ * demo_cgi.py     --  mini helloworld test
+ * demo_cgi.sh     --  debug script so you can run it from command line with out a web server.
+
+The "CGI" library
+{{{
+#!python
+# modeled on code from
+# http://groups-beta.google.com/group/cherrypy-users/browse_thread/thread/46fde58f8c2708d/072a8b36361a0774?q=cgi&rnum=4#072a8b36361a0774
+
+
+# this will enable some better error tracing
+import cgitb; cgitb.enable()
+
+# at some hosts need to add path info manually
+import sys
+# examples
+##sys.path.append("/usr/local/psa/home/vhosts/ninebelow.com/cgi-bin")
+##sys.path.append("/usr/local/psa/home/vhosts/ninebelow.com/cgi-bin/MySQLdb")
+
+import os
+# Cherry Py wsgiapp expects the environment variable PATH_INFO to be
+# set to a string containing the name of the function to call. This should be
+# set by hand; "" is index.html/default
+# otherwise the name. e.g. "myfunc"
+'''
+We can derive script/function name from one of:
+           SCRIPT_NAME
+           SCRIPT_FILENAME
+           SCRIPT_URI
+           SCRIPT_URL
+cgi_function_name=os.path.basename(os.environ['SCRIPT_NAME'])
+'''
+cgi_function_name=""
+if "PATH_INFO" not in os.environ:
+    os.environ["PATH_INFO"] = cgi_function_name
+
+
+# Import CherryPy global namespaces
+# tested with cherrypy.__version__ == '2.0.0'
+from cherrypy import wsgiapp
+from cherrypy import cpg
+
+# Import wrapper function to enable WSGI applications to run in a CGI environment.
+# http://www.pythonweb.org/projects/webmodules
+# Tested with PythonWeb.org-0.5.3; web.version == '0.5.3'
+import web.wsgi
+
+class CherryPyWsgiApp:
+    # CherryPy always starts with cpg.root when trying to map request URIs
+    # to objects, so we need to mount a request handler object here. A request
+    # to '/' will be mapped to cpg.root.index().
+    def __init__(self, cherry_root=None):
+        cpg.root = cherry_root
+        #wsgiapp.init() # default - not useful for cgi as cherry py goes to stdout
+        #wsgiapp.init(configMap = {'server.logToScreen':0})
+        wsgiapp.init(configMap = {'logToScreen':0})
+    def __call__(self, environ, start_response):
+        return wsgiapp.wsgiApp(environ, start_response)
+
+
+def cherrypy_from_cgi(cherry_root=None):
+    #Wrapper function to enable WSGI applications to run in a CGI environment.
+    web.wsgi.runCGI(CherryPyWsgiApp(cherry_root=cherry_root))
+}}}
+
+{{{
+#
+# demo shell script to run hacked cgi for cherrypy from
+# command line for debugging purposes
+#
+
+REQUEST_METHOD=GET
+HTTP_REFERER=""
+SERVER_NAME='hostname'
+SERVER_PORT=80
+SERVER_PROTOCOL=http
+HTTP_HOST=$SERVER_NAME
+
+SCRIPT_NAME=""
+PATH_INFO=""
+
+
+export REQUEST_METHOD HTTP_REFERER PATH_INFO SERVER_NAME SERVER_PORT SCRIPT_NAME SERVER_PROTOCOL HTTP_HOST
+
+python demo_cgi.py
+
+}}}

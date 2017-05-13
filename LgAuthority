@@ -1,0 +1,166 @@
+= lg_authority =
+''available at http://www.github.com/wwoods/lamegame_cherrypy_authority''
+
+[[PageOutline]]
+
+== About ==
+lg_authority is an authentication and authorization control suite for CherryPy.  It handles user registration, group management, and provides functions for denying access to protected resources.  The module is designed to be (relatively) easy to use, but at the same time be extensible enough that it may be customized through standard CherryPy configuration.
+
+Supported registration methods:
+
+ * '''E-mail''' - Either required to create an account, or supplementary for account recovery
+ * '''OpenID''' - If python-openid is installed, users may choose to use an OpenID instead of a password.  lg_authority also allows users to use your site as an OpenID provider.
+ * '''Admin approved only''' - If you only have a small number of approved users for your app (such as an internal team), lg_authority lets those users request accounts and you approve them.
+ * '''Recaptcha''' - Validate that registering users are, in fact, humans (requires recaptcha-client and valid configuration)
+
+The module also provides:
+
+ * '''Namespaced, expiring, key-value storage''' - currently supports ram, sqlite3, and mongodb
+ * '''Non-locking sessions''' - usually used in place of cherrypy.lib.sessions
+ * '''User information in handlers''' - cherrypy.user.id = logged in username; cherrypy.user itself is a modifiable dict of known user attributes
+ * '''Long-term storage for user activities''' - cherrypy.user.slate is like a session, except it may span multiple logins
+
+== Installation ==
+
+This software should be compatible with both python 2 and 3, though features may be limited depending the python language support of the libraries that those features depend on.  For instance, the mongodb storage driver requires pymongo, which is available only for Python 2 at the time of this writing.
+
+Either download and extract the source from [https://www.github.com/wwoods/lamegame_cherrypy_authority/ github] or use git to clone from ''git://github.com/wwoods/lamegame_cherrypy_authority.git''.  Then run 
+
+{{{
+  python setup.py install
+}}}
+
+From the source directory to install lg_authority.
+
+== Example Usage ==
+
+Unlike a conventional tool, lg_authority also requires a mounted object through which it serves its special pages for authentication and user management.  This object is presumed by the default configuration to be mounted at /auth on the webserver.
+
+=== Simple Example ===
+
+The following code sample is a complete CherryPy application that uses lg_authority for authentication.
+
+{{{
+import cherrypy
+import lg_authority
+
+#Restrict default access to logged in users
+@lg_authority.groups('auth')
+class Root(object):
+    """CherryPy server root"""
+
+    auth = lg_authority.AuthRoot()
+    auth__doc = "The object that serves authentication pages"
+
+    #Allow everyone to see the index page
+    @cherrypy.expose
+    @lg_authority.groups('any')
+    def index(self):
+        return '<p>Welcome!</p><p>Would you like to <a href="protected">view protected information?</a></p>'
+
+    #This method inherits restricted access from the Root class it belongs to
+    @cherrypy.expose
+    def protected(self):
+        return '<p>Welcome, {user}!</p><p><a href="auth/logout">Logout</a> and try again?<p>'.format(user=cherrypy.user.id)
+
+#Turn on lg_authority for our website
+cherrypy.config.update({
+    'tools.lg_authority.on': True
+    })
+
+#Run the webserver
+cherrypy.quickstart(Root())
+
+}}}
+
+=== Checking a user's groups without denying them ===
+
+You can use the following snippet to investigate a user's groups (e.g. to show an edit button if they are allowed to edit the page) as in the following snippet:
+
+{{{
+import cherrypy
+import lg_authority
+
+class MyWiki(object):
+    @cherrypy.expose
+    def default(self, page, edit=None):
+        if edit is not None:
+            lg_authority.require_groups('wiki_edit')
+            #User can edit, fetch edit information
+            #...
+        else:
+            p = self.fetch_page(page)
+            if lg_authority.check_groups('wiki_edit'):
+                p += '<a href="{0}?edit=true">Edit</a>'.format(cherrypy.url())
+        return p
+}}}
+
+== Configuration ==
+
+See lg_authority/common_config.py for a rather large dict of all configuration variables and their default values.
+
+=== site_ prefix ===
+
+Any configuration variables prefixed with ''site_'' implies that they are loaded once, and should not be overridden by various access paths.  Usually these would be set in the ''[global]'' configuration section.
+
+=== groups ===
+
+The ''groups'' configuration item is an OR'd list of groups required to access a url.  ''lg_authority.groups()'' simply sets this configuration item.
+
+If membership in more than one group is required to access a resource, then use "all:" as the first required group.  This shortcut will cause access to be denied unless the user is a member of ALL of the groups listed.  Example: ''tools.lg_authority.groups = [ 'all:', 'wiki_edit', 'admin' ]''
+
+=== Storage Mediums ===
+
+Below are the storage mediums supported by lg_authority.  Which storage engine is used is picked by the ''site_storage'' configuration item, and the engine's configuration is placed in the ''site_storage_conf'' configuration item.
+
+For instance, a basic cherrypy configuration file for sqlite3 storage might be:
+
+{{{
+[global]
+tools.lg_authority.site_storage = "sqlite3"
+tools.lg_authority.site_storage_conf = {
+    "file": "lg_auth.db"
+    }
+}}}
+
+==== RAM ====
+
+To use RAM as your storage engine, set ''site_storage = "ram"''.  No further configuration is necessarily.
+
+==== Sqlite3 ====
+
+To use Sqlite3 as your storage engine, set ''site_storage = "sqlite3"''.
+
+Available configuration options:
+
+ * '''file''' - Specify a relative or absolute path to the sqlite3 database file.
+
+==== PyMongo ====
+
+You must have the pymongo python module installed to use this storage type.  Set ''site_storage = "pymongo"'' to use pymongo to store your data in mongodb.
+
+Available configuration options:
+
+ * '''host''' - Optional.  Specify the host address of the mongodb instance.  Defaults to localhost.
+ * '''port''' - Optional.  Specify the host port of the mongodb instance.  Defaults to 27017.
+ * '''db''' - Required.  Specify the database to use for storing information.
+ * '''collection_base''' - Optional.  If specified, this is prefixed to all of the collections created for holding slates.
+
+== Wishlist ==
+
+=== Upcoming Features ===
+
+Before anything is put in the features list, I thought it might be good to make note of my near-future intentions:
+
+ * More internal linking - less URL hacking to logout / etc (the AuthRoot's index provides a few links, but few of those link back)
+ * Built-in Response wrapping support, so that the pages actually look like part of your webpage
+ * Default CSS (in the default response wrapper), just so that it's less ugly out of the box
+ * Unit tests :)
+
+=== Features ===
+
+ * Put things here that should be considered for inclusion in the library... or post an issue on github.
+
+=== Documentation Complaints ===
+
+ * Put things here that are issues with this page.

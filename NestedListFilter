@@ -1,0 +1,79 @@
+Igor Murashkin was kind enough to make a filter for making FormEncode validation easier. See the docstring for usage and examples. This should work with CherryPy 2.1 and 2.2.
+
+{{{
+#!python
+
+class NestedListFilter:
+    """Will build a nested list for request params with periods in the
+    name, for an example look at _nestedList().
+    
+    Given a dict of the form: {'foo.bar.joo': [oldValue1, oldValue2]}
+    this will return a new tree of the form:
+        {foo : [{'bar': {'joo': oldValue1}},
+                {'bar': {'joo': oldValue2}}]
+        }
+    
+    Example #1:
+    >>> print self._nestedList({'company': 'Unexistential Inc',
+                                'names.firstName': ['Joe', 'Boe', 'Moe'],
+                                'names.lastName': ['Smith', 'Myth', 'Keith'],
+                                'phone': '555-8980'})
+    >>> {'company': 'Unexistential Inc',
+         'names': [{'firstName': 'Joe', 'lastName': 'Smith'},
+                    {'firstName': 'Boe', 'lastName': 'Myth'},
+                    {'firstName': 'Moe', 'lastName': 'Keith'}],
+         'phone': '555-8980'}
+    
+    Example #2
+    >>> print self._nestedList({'misc': 'Trespassing Prohibited!',
+                                'top.locations.state': ['IL', 'NY'],
+                                'top.locations.zip': [48890, 21142],
+                                'top.markets': ['Belmont', 'Reasan']})
+    >>> {'misc': 'Trespassing Prohibited!',
+         'top': [{'markets': 'Belmont',
+                  'locations': {'state': 'IL', 'zip': 48890}},
+                 {'markets': 'Reasan',
+                  'locations': {'state': 'NY', 'zip': 21142}}
+                  ]}
+    """
+    
+    def beforeMain(self):
+        cherrypy.request.paramMap = self._nestedList(cherrypy.request.paramMap)
+    
+    def _nestedList(self, oldDict):
+        newParams = {}
+        for oldKey, oldValue in oldDict.iteritems():
+            if "." in oldKey:
+                if not isinstance(oldValue, list):
+                    oldValue = [oldValue]
+                
+                splitList = oldKey.split(".")
+                head = splitList.pop(0)
+                tail = splitList.pop()
+                
+                bucket = newParams.setdefault(head, [])
+                for index, realValue in enumerate(oldValue):
+                    if index + 1 > len(bucket):
+                        bucket.append({})
+                    branch = bucket[index]
+                    for nestKey in splitList:
+                        branch = branch.setdefault(nestKey, {})
+                    branch[tail] = realValue
+            else:
+                newParams[oldKey] = oldValue
+        return newParams
+}}}
+
+Here's a formencode schema to use with example 1:
+
+{{{
+#!python
+class NameSchema(Schema)
+  firstName = validators.String()
+  lastName = validators.String() 
+
+class CompanySchema(Schema): 
+  company = validators.String()
+  names = NameSchema() 
+  phone = validators.Int()
+}}}

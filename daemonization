@@ -1,0 +1,25 @@
+I got cherrypy to run as a daemon finally.  
+
+using the Daemonizer plugin.  
+  
+I heard about the plugin in a comment at  
+
+[http://groups.google.com/group/cherrypy-users/browse_thread/thread/89e62bd4f9414acd/0f00d5d67c1d99c5?#0f00d5d67c1d99c5]
+
+I'm using CherryPy 3.1.0 on Fedora 8 and the following seems to work well.
+
+{{{
+import cherrypy
+from cherrypy.process.plugins import Daemonizer
+Daemonizer(cherrypy.engine).subscribe()
+
+class HelloWorld:
+    def index(self):
+        return "Hello world!"
+    index.exposed = True
+
+cherrypy.quickstart(HelloWorld(), '/',)
+}}}
+
+
+

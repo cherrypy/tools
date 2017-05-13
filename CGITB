@@ -1,0 +1,76 @@
+You can obtain tracebacks in cgitb format by adding this simple Tool to your arsenal:
+
+{{{
+#!python
+def err():
+    """Replace the default error response with an HTML traceback from cgitb."""
+    import cgitb, sys
+    tb = cgitb.html(sys.exc_info())
+    def set_tb():
+        cherrypy.response.body = tb
+        cherrypy.response.headers['Content-Length'] = None
+    cherrypy.request.hooks.attach('after_error_response', set_tb)
+cherrypy.tools.cgitb = cherrypy.Tool('before_error_response', err)
+}}}
+
+Enable it for any URI's in a config file:
+
+{{{
+[/]
+tools.cgitb.on = True
+}}}
+
+...or for a class with {{{_cp_config}}}:
+
+{{{
+#!python
+class Root:
+    
+    _cp_config = {'tools.cgitb.on': True}
+        
+    def default(self, *args, **kwargs):
+        return "args: %s kwargs: %s" % (args, kwargs)
+    default.exposed = True
+}}}
+
+----
+Modifed version that will put details into your logs as well.
+{{{
+#!python
+def cgitb_display_err():
+    """Replace the default error response with an HTML traceback from cgitb."""
+    import cgitb, sys
+    tb = cgitb.html(sys.exc_info())
+    def set_tb():
+        cherrypy.response.body = tb
+        cherrypy.response.headers['Content-Length'] = None
+    cherrypy.request.hooks.attach('after_error_response', set_tb)
+cherrypy.tools.cgitb_display_err = cherrypy.Tool('before_error_response', cgitb_display_err)
+
+def cgitb_log_err():
+    """Log cgitb details to the log."""
+    import cgitb, sys
+    tb = cgitb.text(sys.exc_info())
+    def set_tb():
+        cherrypy.log(tb)
+    cherrypy.request.hooks.attach('after_error_response', set_tb)
+cherrypy.tools.cgitb_log_err = cherrypy.Tool('before_error_response', cgitb_log_err)
+
+
+}}}
+How to enable:
+{{{
+#!python
+[/]
+#Turn on cgitb displays:
+  tools.cgitb_display_err.on = True
+
+#Turn on detailed logging (after turning off default logging):
+  tools.log_tracebacks.on = False
+  tools.cgitb_log_err.on = True
+
+}}}
+
+Here's an example of the output you'll get:
+
+http://tools.cherrypy.org/attachment/wiki/CGITB/cgitb.jpg?format=raw

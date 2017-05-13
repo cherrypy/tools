@@ -1,0 +1,11 @@
+If you're migrating from the world of J2EE, a lot of the same concepts exist but have different names in cherrypy.
+
+Feel free to add to this document!
+
+== Scope ==
+
+|| '''scope''' || '''J2EE'''          || '''CherryPy'''    ||
+|| page        || !PageContext        || ''no equivalent'' ||
+|| request     || !HttpServletRequest || cherrypy.request  ||
+|| session     || !HttpSession        || cherrypy.session  ||
+|| application || !ServletContext     || Application       ||

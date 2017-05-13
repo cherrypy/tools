@@ -1,0 +1,78 @@
+== MultiAuth ==
+
+MultiAuth provides authentication and access control for CherryPy web objects.  It is currently in development and is targeted to be compatible with CherryPy 2.1.
+
+MultiAuth provides a few different means of securing your web objects:
+
+ * Decorators
+   * Allow granular access control for individual methods
+ * Metaclasses
+   * Provides an easy way to set base security requirements for all methods in a class
+ * Inheritance
+   * Pretty much same as metaclasses (it uses them, actually), just different syntax
+
+
+== Providers ==
+
+Other than a demo dictionary authentication provider, LDAP authentication (Active Directory, specifically) is the only implemented authentication provider in this release.  I also hope to create providers for other authentication methods (Windows, Unix, etc).
+
+Regarding the LDAP authentication, if someone using another LDAP provider (eDirectory for example) would like to look at the code and write an implementation for that provider, I could include it in this package.  I would do it but I don't have access to any other LDAP providers at this time.
+
+Adam Svanberg has written a ''very flexible'' database authentication provider for MultiAuth.  It utilizes PyDO and can be downloaded from the links at the bottom of this wiki page.  The source code includes an usage example.
+
+== Installation ==
+
+Installation is simple.  Decompress the zip file and run "python setup.py install".
+
+The installation puts documentation in "site-packages/multiauth/docs" and a few examples in "site-packages/multiauth/examples".
+
+== Example ==
+So you can see what I am talking about without having to download the package, here is a simple example included with the distribution:
+
+{{{
+#!python
+import cherrypy
+
+from multiauth import auth
+from multiauth.providers import DictAuthProvider
+
+class SimpleSite:
+    "Sample multi-level security with decorators"
+
+    @cherrypy.expose    
+    def index(self):
+        return """
+        <a href="protected">Protected method</a><br>
+        <a href="open">Open method</a><br>
+        """
+    
+    @cherrypy.expose
+    @auth.secure(['supersecret'])
+    def protected(self):
+        return "you have accessed the protected page"
+
+    @cherrypy.expose
+    def open(self):
+        return "this is the open page"
+
+# create our silly provider
+myProvider = DictAuthProvider({})
+myProvider.add('christian', 'secret', ['users'])
+myProvider.add('admin', 'sshh', ['users', 'supersecret'])
+
+# set it as auth's provider
+auth.provider = myProvider
+
+cherrypy.root = SimpleSite()
+
+# session filter needs to be on
+cherrypy.config.update({'sessionFilter.on':True})
+
+cherrypy.server.start()
+}}}
+
+
+== Download == 
+Get the latest version at http://projects.dowski.com/projects/multiauth
+
+You can download the PyDOProvider from the link below.

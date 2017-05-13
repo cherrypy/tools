@@ -1,0 +1,440 @@
+= FastFormward =
+
+Previously named !CherryForms, but name change was requested as this module isn't a builtin, or otherwise CherryPy core related. 
+
+'''Note:'''[[br]]
+This documentation is far from perfect. Browser through it at least once and take a look at the samples. If any good doc writer is availble: feel free to rearrange and rewrite :)
+
+== What is it? ==
+FastFormward is a library for quickly developing simple forms. 
+
+== Why for crying out loud?! ==
+There are plenty other form generators around, and i inspected merely a few.. [[br]]
+None were clean and obvious enough to grasp in 5 minutes, and all needed an adaption for CherryPy. That's not what i was looking for, so i wrote {{{YetAnotherFormGeneratorAndValidator}}}. According to [http://groups-beta.google.com/group/cherrypy-users/browse_frm/thread/4354dfed3bb6c3c1/ this thread on the users-list] i wasn't the only one seeking a nice sollution. :)
+
+=== When to use it? ===
+- well. I'm currently developing busines intranet applications. So they have to be developed fast, should be easily adaptable, and the layout is  most of the times not that interesting. .  Right now, i'm learning to do ''Agile development'' (no flames about this please) and one of the things i want to use this library for is avoiding the reccuring development of data entry forms. 
+
+=== What kinda applications? ===
+You probabely don't want to use this when building a Forum or such.. [[br]]
+Development was aimed at intranet business applications. Saving me time with the simple screen, to focus on the more important stuff. So mainly, it should be a time-saver ;)
+
+== So you think it's the best? ==
+Nope.. i will not have that illusion. It's more like ''yet another sollution'', and as long as it suits me fine, i'm working with- and on it. 
+
+[http://www.cherrypy.org/wiki/RemcoBoerma Remco]
+
+-----
+
+== Pro's and cons? ==
+Cons: 
+ * Very very alfa!! 
+ * At the moment, there aren't enough fields supported out-of-the-box
+ * At the time of writing, the {{{Field}}} implementations are quite 'hackish'
+ * The implementation so far, is more a proof of concept, than a use-for-production library.
+ * You are looking at all the external documentation, the rest is inline
+ * Right now, doesn't support opening multiple windows to the same url within the same session.
+
+Pro's:
+ * It's highly pythonic
+ * Built for cherrypy
+ * Seperates HTML and Python code as much as possible: Your logic is in Python, the HTML is constructed, and CSS is used for layout. (Near) perfect seperation :)
+ * Allows for easy integration with templating filters (like the charming XyaptuFilter :) )
+ * Highly adaptable
+ * Allows a single {{{Field}}} to use multiple html form fields. See {{{CompoundFields}}}.
+ * Develop forms '''fast'''
+
+== CompoundFields ==
+{{{CompoundField}}}s consist of a single {{{Field}}} derived class, that handles multiple html form fields. Think of the following data structures that would allow for easy development of compound fields. 
+But please do remember: converting your form to a {{{CompoundField}}} is only a good thing to do, when you will use that input structure quite often. . 
+ * Dates (day, month, year)
+ * Users (login name, real name, email)
+ * Authorisations (<auth details>, note, choice)
+
+Hers is a very simple example of a {{{DateField}}} using 3 inputs, and uses the {{{datetime}}} module to validate and convert the entered data:
+{{{
+#!python
+class DateField(CompoundField):
+    def __init__(self,name, label=None):
+        "Enter a name, a list of fields, and an optional label."
+        self.day = IntField("day",'Day')
+        self.month = IntField("month",'Month')
+        self.year = IntField("year",'Year')
+        super(DateField,self).__init__(name,[self.day, self.month, self.year],label)
+
+    def validate(self,kwp):
+        "validates the date, using time module"
+        try:
+            self.pyValue(kwp)
+        except:
+            return False
+        return True
+
+    def errorMsg(self,kwp):
+        try:
+            self.pyValue(kwp)
+        except Exception, e:
+            return str(e)
+        return ''
+    
+    def pyValue(self,kwp):
+        vals = super(DateField,self).pyValue(kwp)
+        import datetime
+        return datetime.date(**vals)
+
+# and now to use it:
+# in Root.__init__(self,...):
+   self.d = forms.Form(name='birthday',
+                       onExit = onExit,
+                       fields = [forms.DateField('birthday','Please enter your birthday')],
+                       submit = forms.SubmitField('next','Next: ',value='Go!'),
+                       confirm = None)
+# see below for more detailsa and other samples
+}}}
+
+== Extendible, you say? ==
+Yes, as the form code is built around a [http://en.wikipedia.org/wiki/Petri_net PetriNet], one can easily extend the system to introduce even more different behaviour. The code to do this was inspired by the lovely, and very simple workflow module from [http://www.ikaaro.org/itools/ Ikaaro's itools]. Well, and a note by Guido van Rossum (which i can't seem to find anywhere anymore) on doing workflow with a dictionary. 
+
+But most of all, the library of supported fields is extendible. [[br]]
+Based on a {{{Field}}} object, many other other field types can be generated. The most basic are the {{{TextField}}} and the {{{IntField}}}. 
+
+-----
+== Okay, you got my attention. . explain ==
+Well.
+
+Let's start with some {{{Form}}} and {{{Field}}} documentation :
+{{{
+Help on class Form in module forms:
+
+class Form(__builtin__.object)
+ |  A form is a cherrypy page...
+ |  it has the following states:
+ |      X. ...nothingness...
+ |      A. New Entry
+ |      B. Users Enters Data
+ |      C. Validate Entered Data
+ |      D. Getting Confirmation From User
+ |      E. ReEntry Filled With Entered Values
+ |      F. ReEntry Filled With Entered Values and error message
+ |      G. Entry Completed
+ |  Transitions: (obvious activity between () )
+ |  
+ |      X --> A : born (form is setup, run only once!!)
+ |  
+ |      A --> B : (html is brewn) show form on screen
+ |  
+ |      B --> C : users posts results 
+ |  
+ |      C --> D : input is valid, but a user confirmation was set to be asked, 
+ |                (brew confirmation html)
+ |  
+ |      C --> G : input is valid, but no user confirmation was set to be asked,
+ |  
+ |      C --> F : input is not valid
+ |                (brew html with data and error msgs)
+ |  
+ |      F --> B : user posts new results 
+ |  
+ |      E --> B : user posts new results 
+ |  
+ |      G --> X : (fire another (external) method to build new screen)
+ |  
+ |  The form entry should all be done using 1 url, and preferable no hidden
+ |  form inputs to differentiate the states.. Otherwise it would be to easy
+ |  to hack those values.. So keeping the state purely serverside (and there-
+ |  for also not using different urls for the different states) allows for
+ |  less hackable data entry.
+ |  
+ |  The concept used to solve this, is to change the check the session for
+ |  the state for this form, and switch to the right function accordingly.
+ |  
+ |  Methods defined here:
+ |  
+ |  A_onEnter(self, kwp)
+ |      yield entry HTML, kwp is bluntly passed onto the fields .build call.
+ |  
+ |  B_onEnter(self, kwp)
+ |      state B isn't a state where HTML is produced..
+ |      it's entered just before the validation starts
+ |      in state C
+ |      Stores the KWP in the session!
+ |  
+ |  C_onEnter(self, kwp)
+ |      Let's move on
+ |  
+ |  D_onEnter(self, kwp)
+ |      same as A_onEnter, but now calls the .build's with 'readonly=True' and with a confirmation input.
+ |  
+ |  E_onEnter(self, kwp)
+ |      in coding, this is the same as A_onEnter, so it uses that.
+ |  
+ |  F_onEnter(self, kwp)
+ |      If there is an invalid value in kwp
+ |      the html with warning should be displayed, this is done i each
+ |      .build() issued..
+ |  
+ |  G_onEnter(self, kwp)
+ |      Let's move on
+ |  
+ |  X_onEnter(self, kwp)
+ |      If we _enter_ this, it means we have reached valid and possibly confirmed input.
+ |      Therefore, the onExit method is called (and it's result returned!), with the kwp from A_onEnter...
+ |  
+ |  __call__(self, **kwp)
+ |      CP2 helper to map /foo/bar to /foo/bar/default
+ |  
+ |  __init__(self, name, onExit, fields, confirm, submit=None, invalidForm=None, encoding='application/x-www-form-urlencoded')
+ |      name,    # form name
+ |      onExit,  # onExit method, will be called with a dictionary
+ |               # where key,value = key of the fields, pyValue of the
+ |               # form fields.
+ |      fields,  # list of fields (order, _is_ important)
+ |      confirm, # user should confirm after good entry, field type
+ |               # with the question
+ |      submit = None, # optional submit input type (can be a combined)
+ |               # will be left out in readonly data 
+ |      invalidForm = None, # specify to overwrite self.invalidForm
+ |      encoding = 'application/x-www-form-urlencoded' # form encoding,
+ |               # to support files etc...
+ |               # see http://www.w3.org/TR/REC-html40/interact/forms.html#h-17.3
+ |  
+ |  confirmationOk(self, kwp)
+ |      Does the self.confirm field validate, and is bool(self.confirm.pyValue(kwp) ) true?
+ |      Cause if it is, the user has confirmed the entered data.
+ |  
+ |  default(self, **kwp)
+ |      CP2 method to produce HTML. Will determine the next state and call the onEnter function for that state.
+ |  
+ |  index(self, **kwp)
+ |      CP2 helper to map /foo/bar/ to /foo/bar/default
+ |  
+ |  invalidEntry(self, kwp)
+ |  
+ |  invalidForm(self, kwp)
+ |      InValid Form? kwp is the dict with fields
+ |      is called when all fields have valid input
+ |      but there needs to be constraints checking
+ |      to see if the logic between the fields is okay.
+ |      return False if the fields are OKAY, or return
+ |      an error msg to tell the user what's wrong.
+ |  
+ |  ----------------------------------------------------------------------
+ |  Data and other attributes defined here:
+ |  
+ |  __dict__ = <dictproxy object at 0x0150D970>
+ |      dictionary for instance variables (if defined)
+ |  
+ |  __weakref__ = <attribute '__weakref__' of 'Form' objects>
+ |      list of weak references to the object (if defined)
+
+
+-------------------
+Help on class Field in module forms:
+
+class Field(__builtin__.object)
+ |  Methods defined here:
+ |  
+ |  __init__(self, type, name, label=None, html=None, id=None, tip=None, style=None, cssclass=None, helpmsg=None, validate=None, value=None, **extraAttrs)
+ |      Base Field type. Use derivatives.. 
+ |       type,          # type of input ('compound' for custom compound inputs)
+ |       name,          # name of the input (or a list of names)
+ |       label=None,    # the label to precede the input
+ |       html=None,     # direct html entry
+ |       id=None,       # the dom ID
+ |       tip=None,      # tooltip, rendered probabely as title attribute
+ |       style=None,    # any direct style input
+ |       cssclass=None, # the CSS class 
+ |       helpmsg=None,  # any default help msg if input fails.
+ |       validate=None, # specific validation method (made an instancemethod using module new)
+ |       value=None,    # value if already known, can be anything, to support compound fields
+ |       **extraAttrs): # support for unknown tags
+ |  
+ |  build(self, form, readonly=False)
+ |      Called to build the html for this field, for the specified form.
+ |      Should return a string.
+ |      If readonly: the html should be rendered as readonly on the client side
+ |  
+ |  errorMsg(self, form)
+ |      Override this: so you can write specific error msgs based on the data in form.
+ |  
+ |  getHtml(self, form={})
+ |      Property get method for html. the form parameter is the dictionary with form parameters
+ |  
+ |  pyValue(self, form)
+ |      Override this: return the python variant of this input based on the form dictionary.
+ |  
+ |  validate(self, form)
+ |      Returns either (True, value) or an (False,error message ) with the given form.
+ |      This means, that the Field will have to do it's own checking if there is a value
+ |      for it in the form.
+ |      Design decision: why not pass the corresponding value?
+ |          - well, that is an option. But when using multiple values using a compund
+ |            field, this can best be left to the specific Field..
+ |  
+ |  ----------------------------------------------------------------------
+ |  Properties defined here:
+ |  
+ |  html
+ |      Generated or static html for input..
+ |  
+ |      <get> = getHtml(self, form={})
+ |          Property get method for html. the form parameter is the dictionary with form parameters
+ |  
+ |      <set> = _setHtml(self, html)
+ |  
+ |      <delete> = _delHtml(self)
+ |  
+ |  ----------------------------------------------------------------------
+ |  Data and other attributes defined here:
+ |  
+ |  __dict__ = <dictproxy object at 0x0150D2F0>
+ |      dictionary for instance variables (if defined)
+ |  
+ |  __weakref__ = <attribute '__weakref__' of 'Field' objects>
+ |      list of weak references to the object (if defined)
+
+}}}
+
+Now, i hope this is obvious enough, but a little test run can do no harm. [[br]]
+Let's pretend we run the following code... (as part of it is pure code, and another part is pure output...)
+
+{{{
+#!python
+# let's say we have in integer field
+# with a input name of 'int', a label 'Enter an integer:' and a helpmsg if the 
+# input doesn't validate...
+>>> i = forms.IntField('int','Enter an integer:',helpmsg='Use only digits...')
+
+# Now, let's define a function we want called when the entry is over. 
+# (this could be a redirect to another form, or do something else. 
+# be creative! :) (With some reassinging in the root structure, it is 
+# not hard to write  a flowable application. 1 url: complete application. 
+# porting to the commandline would be easy. - right Carlos?! )
+>>> def onExit(kwp):
+
+>>>     print '--- got the keyword parameters. redirecting to other page.. '
+>>>     print 'kwp:',`kwp`
+>>>     print 'done'
+>>> 
+# we have ourselves an onExit function, and an input field. 
+# Let's create a form:
+#  * name : form name (used for storing the entry state in the session)
+#  * onExit : is obviously the callback when entry is valid and complete
+#  * fields : a list of fields (put in html in that order - use CSS for
+#             extra layout requirements.
+#  * confirm : None: there is no confirmation function - we'll get back at 
+#              this later.
+>>> f = forms.Form(name='formpje', onExit = onExit, fields = [i], confirm = None)
+
+# Let's pretend we're a browser request:
+>>> print "".join(f.default())
+# we would get something like this:
+# [with extra linefeeds for readability - the result is linefeedless]
+# >> transition X -> A
+
+<form method="post" action="." enctype="application/x-www-form-urlencoded">
+<label for="input.int" >Enter an integer:</label>
+<input type="text" name="int" id="input.int"    value="">
+</form>
+
+# next, we pretend to enter invalid data:
+>>> print "".join(f.default(int='WRONG'))
+# >> transition A -> B
+# >> transition B -> C
+# >> transition C -> F
+<form method="post" action="." enctype="application/x-www-form-urlencoded">
+<label for="input.int" >Enter an integer:</label>
+<input type="text" name="int" id="input.int"     erroreous value="Use only digits...:WRONG">
+</form>
+
+# next we enter valid data:
+>>> f.default(int='123')
+# >> transition F -> B
+# >> transition B -> C
+# >> transition C -> G
+# >> transition G -> X
+got the keyword parameters. redirecting to other page.. 
+kwp: {'int': 123}
+done
+# that is to be expected, as we didn't provide a confirm field 
+# which requests a validation of the entered data
+# the data should be offered readonly..
+# so the onExit routine is called, with the kwp being set to the **kwp
+# default retrieves - and we can assume it's valid data...
+}}}
+
+== More samples == 
+Here is a bit more of a smample. 
+I've left out the output for clarity, get the module and use it if you'd like to see what this produces..
+
+both root.f, root.g and root.h are forms. [[br]]
+Also note, that this is the entire {{{Root}}} class, and no external HTML or so is used...
+{{{
+#!python
+class Root:
+    def __init__(self):
+        def onExit(kwp):
+            yield 'terminated with kwp: ',`kwp`
+        import forms
+        # first form: simply enter an integer
+        # [mind you, this will also work without a submit button, 
+        # so the submit button will leave from the output]
+        self.f = forms.Form(name='formpje',
+                            onExit = onExit,
+                            fields = [forms.IntField('intje','geef intje:')],
+                            confirm = None)
+        # same as self.f
+        # but now with a cssclass for the input, and a confirmation request
+        # after valid data has been read. 
+        self.g = forms.Form(name='formpje_with confirmation', 
+                            onExit = onExit,
+                            fields = [forms.IntField('intje','geef intje:',cssclass="veldje")],
+                            confirm = forms.SubmitField('confirmed','Confirmed?', value='Confirmed'))
+
+        # this will produce 3 integer fields. 
+        # so:
+        #  * the entry of each field must be valid
+        # there is a veldConfirm to request confirmation
+        #  * the form uses confirmation after valid data
+        # checkMultiply is used
+        #  * we add logic to test if the input values for this
+        #    form are correct. So we can test a bit more, if the input
+        #    relates to certain 'form'-logic constraints.. this is 
+        #    typically where you would want to validate the entry 
+        #    with databases etc. 
+        veldA = forms.IntField('A','A:')
+        veldB = forms.IntField('B','B:')
+        veldMul = forms.IntField('mult','multiplied')
+        veldConfirm = forms.SubmitField('confirmed','Confirmed?', value='Confirmed')
+        submit = forms.SubmitField(value='Submit')
+
+        # this will check if the fields A * B == C
+        # if not, form validation will fail (though every field validation might 
+        # have returned succesfully) and the error msg returned will be displayed
+        # on screen. (not in any div or so, you should do that yourself..)
+        #
+        def checkmultiply(kwp):
+            if veldA.pyValue(kwp) * veldB.pyValue(kwp) != veldMul.pyValue(kwp):
+                return "A * B should be equal to C"
+
+        ## here comes the form, available under /h/
+        self.h = forms.Form(name='formpje_with confirmation', 
+                            onExit = onExit,
+                            fields = [veldA,veldB,veldMul],
+                            invalidForm = checkmultiply,
+                            submit = submit,
+                            confirm = veldConfirm)
+        # now, ain't that easy?
+
+}}}
+
+== Haven't had enough? ==
+Reach me at the CherryPyIrcChannel, or use one of the CherryPyMailingLists. 
+
+== To do ==
+ * Remove extra states that aren't useful. (any state that isn't a join, or doesn't produce output is redundant)
+ * more dox :)
+ * more field types
+
+== History ==
+See the latest attachment...

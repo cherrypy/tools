@@ -1,0 +1,38 @@
+Here's a WSGI middleware component for using [http://projects.amor.org/misc/wiki/PyConquer pyconquer] with any CherryPy app. It's a great way to find threading problems, as well as profile call times. PyConquer was built to resolve some concurrency issues while I was writing {{{test_states.py}}}, and really helped me untangle the interaction between request threads, the main thread, and (the old CP 2) autoreload.
+
+{{{
+#!python
+class WSGILogger(object):
+    """A WSGI middleware app which wraps 'nextapp' with pyconquer."""
+    
+    def __init__(self, nextapp, path="pyconquer.log"):
+        self.nextapp = nextapp
+        self.path = path
+        f = open(self.path, "wb")
+        f.write("")
+        f.close()
+    
+    def run(self, func, *args):
+        """run(func, *args). Run func, dumping trace data into self.path."""
+        import pyconquer
+        tr = pyconquer.Logger(events = ['call', 'return', 'exception',
+                                        'c_call', 'c_return', 'c_exception',
+                                        ])
+        tr.out = open(self.path, "ab")
+        tr.time_calls = True
+        try:
+            tr.start()
+            return func(*args)
+        finally:
+            tr.stop()
+            tr.out.close()
+    
+    def __call__(self, environ, start_response):
+        # Wrap the request in a function so we get a "total time".
+        def gather():
+            result = []
+            for line in self.nextapp(environ, start_response):
+                result.append(line)
+            return result
+        return self.run(gather)
+}}}

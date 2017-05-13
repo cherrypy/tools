@@ -1,0 +1,105 @@
+= RoutesUrlMatching = 
+
+In this tutorial, we will try to see what can be done with routes and what can't (at least with Routes 1.8).
+We are going to create a very simple application customized for each user.
+
+{{{
+import cherrypy
+
+class Profile(object):
+
+    def __init__(self):
+        self. users = {
+            'marc' : {'id': 1, 'email': 'marc@test.com', 'interests': ['knitting', 'coding', 'beer drinking']},
+	    'paul' : {'id': 2, 'email': 'paul@test.com', 'interests': ['kitty hunting', 'throwing rocks at children']}
+        }
+
+    def interests(self, user, id=None):
+        user = user.lower()
+	if user in self.users.keys():
+	    if id and 0 <= int(id) < len(self.users[user]['interests']):
+	        return user + "'s interests: " + self.users[user]['interests'][int(id)]
+	    if not id:
+	    	return user + "'s interests: " + str(self.users[user]['interests'])
+	return user + " does not exist. Or the id specified is not valid."
+    
+    def home(self, user, field=None):
+        user = user.lower()
+	if field not in ['email', 'interests']:
+	    field = None
+	if user in self.users.keys():
+	    if field is not None and field in self.users[user].keys():
+	        return user + "'s " + field + ": " + str(self.users[user][field])
+	    else:
+	        res = ""
+	        for field in self.users[user].keys():
+		    res += user+ "'s " + field + ": " + str(self.users[user][field]) + "<br/>"
+		return res
+	return user + " does not exist"
+
+}}}
+
+It doesn't do much. We have two pages, home and interests, which display information about the specified user.
+
+Let's take a look at the URL we can have for this application.
+First thing is to get the Routes dispatcher, so that we can add routes and match url
+{{{
+# getting the Routes dispatcher
+d = cherrypy.dispatch.RoutesDispatcher()
+root = Profile()
+}}}
+Here is the standard way of doing things with routes:
+Thanks to "URL Minimization", uri like
+{{{
+/interests/marc
+/interests/marc/2
+}}}
+can both be matched by the same route :
+{{{/interests/:user/:id}}}
+with a default value for id.
+Here is how it is done :
+{{{
+d.connect('second route', '/interests/:user/:id', controller=root, action='interests', id=0)
+d.connect('first route', '/home/:user/:field', controller=root, action='home', field=None)
+}}}
+
+But what happens when you want to do prettier url ?
+Let's assume that your app is user centered. Having all url starting with the user name is by far nicer : /marc/interests is more attractive than /interests/marc. Moreover, it would be very nice to be able to access "home" through /marc and not /marc/home or /home/marc. The intuitive way of doing so is the following:
+{{{
+d.connect('interests', '/:user/interests/:id', controller=root, action='interests', id=0)
+d.connect('home', '/:user/:field', controller=root, action='home', field=None)
+}}}
+Note that the order is very important here, as Routes stops at the first route matched.
+
+If you try this code, you'll see that accessing /marc does not display marc's home but the page you would expect to get at /marc/interests/0
+Although it should not be this way, the url minimization in routes makes this possible. For further detail, look at Routes' doc. It has to do with minization and implicit values of variables. The only solution is forget minimization and only use explicit routes.
+
+To do so, 2 things must be done:
+ * first of all: not doing things like 'field=None' (ie explicit minimization)
+ * second: disabling implicit routes
+The default form for a route is {{{/:controller/:action/:id}}}. You can just do {{{d.connect('/:controller/:action/:id')}}} and Routes will interpret it as using the 'action' method on the specified controller with id as parameter (id = None if not specified). As you can see, there is some implicit minimization here, and letting it available will create issues.
+
+A word about minimization:
+If you want to be sure that no minimization is done, you must disable it (and of course use only explicit routes). You have to upgrade to at least Routes 1.9 to do this (the feature is not present in previous version): {{{easy_install -U routes}}} to upgrade.
+Moreover, with minimization disabled, you have to specify routes for each type of URL. You can't do {{{/:user/:field}}} anymore with field default to None. You have to specify {{{/:user}}} and {{{/:user/:field}}}. This way everything is explicit and works fine
+
+Here is the end of the code:
+{{{
+m = d.mapper
+m.explicit = True # no implicit values for routes
+m.minimization = False # no minimization (Routes > 1.9 only !)
+d.connect('interests-1', '/:user/interests', controller=root, action='interests')
+d.connect('interests-2', '/:user/interests/:id', controller=root, action='interests')
+d.connect('home-1', '/:user', controller=root, action='home')
+d.connect('home-2', '/:user/:field', controller=root, action='home', field=None)
+
+# setting the dispatcher into the CherryPy config
+conf = {'/' : {'request.dispatch' : d}}
+# note that since the dispatcher handles the matching url/method
+# we do not need to specify the root of the application anymore
+cherrypy.tree.mount(root=None, config=conf)
+cherrypy.server.quickstart()
+cherrypy.engine.start()
+}}}
+
+

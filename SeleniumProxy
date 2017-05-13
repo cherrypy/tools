@@ -1,0 +1,84 @@
+Here's a little tidbit that we use to add selenium to the test suite for our CP apps.
+
+{{{
+#!python
+import os
+localDir = os.path.dirname(__file__)
+
+class SeleniumProxy(object):
+    
+    jarfile = os.path.join(localDir, 'selenium-server.jar')
+    
+    def __init__(self):
+        self.started = False
+        self.cmd = None
+    
+    def start(self):
+        if not self.started:
+            self.cmd = os.popen('java -jar "%s" -interactive' % self.jarfile, 'w')
+            try:
+                from cherrypy import _cpserver
+                _cpserver.wait_for_occupied_port('127.0.0.1', 4444)
+                self.started = True
+            except:
+                self.stop()
+    
+    def stop(self):
+        if self.cmd:
+            self.cmd.write('quit\n')
+            self.cmd.close()
+            self.cmd = None
+        self.started = False
+
+proxy = SeleniumProxy()
+
+
+def use_selenium(test_method):
+    """Decorator for test methods to use selenium."""
+    def wrapper(self):
+        # First, start up the Selenium proxy server
+        proxy.start()
+        self.verificationErrors = []
+        try:
+            return test_method(self)
+        finally:
+            proxy.stop()
+            self.assertEqual([], self.verificationErrors)
+    return wrapper
+
+browsers = ("*firefox", "*iexplore")
+}}}
+
+Here's an example of its use:
+
+{{{
+#!python
+from endue.tests.selenium import selenium
+from cherrypy.test import helper
+from endue.tests import test
+
+
+class InterestTests(helper.CPWebCase):
+    
+    @test.use_selenium
+    def test_InterestsInterface(self):
+        for browser in test.browsers:
+            try:
+                sel = selenium("localhost", 4444, browser, "http://127.0.0.1:8080")
+                sel.start()
+                
+                # search for directory ID 1
+                sel.open("/firststone/nav/")
+                sel.click("Directory")
+                sel.select_window("Opsdyn")
+                sel.wait_for_condition('selenium.isElementPresent("Criteria3")', '10000')
+                sel.type("Criteria0", "1")
+                sel.click("//input[@value='SHOW']")
+                sel.select_window("Opsdyn")
+                
+                # wait for the directory page to load...
+                sel.wait_for_condition('selenium.isElementPresent("//div[4]/div/h3")', '10000')
+                sel.wait_for_condition('selenium.getText("//div[4]/div/h3") == "Stated Interests"', '10000')
+            finally:
+                sel.stop()
+}}}
